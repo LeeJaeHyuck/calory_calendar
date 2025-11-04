@@ -1,50 +1,157 @@
-# Welcome to your Expo app 👋
+# 🍓 Weekly Meal Planner (React Native + Expo)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+> iOS 전용 식단 기록/통계 앱 — 일별·주별·월별로 식단을 기록하고 칼로리를 확인할 수 있습니다.  
+> 귀엽고 깔끔한 분홍 테마로 구성되어 있으며, Expo Router 기반의 탭 네비게이션을 사용합니다.
 
-## Get started
+---
 
-1. Install dependencies
+## 🏗️ 프로젝트 구조
 
+```
+app/
+ ├─ (tabs)/
+ │   ├─ daily.tsx      # 일별 기록 화면
+ │   ├─ weekly.tsx     # 주별 요약 화면
+ │   └─ monthly.tsx    # 월별 달력형 요약 화면
+ ├─ _layout.tsx        # 탭 라우터 구조
+ └─ index.tsx          # 첫 진입 시 daily로 redirect
+```
+
+---
+
+## ⚙️ 개발 환경
+
+| 항목 | 버전 |
+|------|------|
+| Node.js | 18.x 이상 |
+| npm | 9.x 이상 |
+| Expo CLI | 6.x 이상 |
+| React Native | 0.74 이상 |
+| Expo Router | 6.0.14 |
+| Expo SDK | 54.0.21 |
+
+> ✅ iOS(아이폰) 전용으로 구성되어 있으며, Android 대응은 테스트되지 않았습니다.
+
+---
+
+## 📦 설치한 주요 라이브러리
+
+```bash
+# 필수 패키지
+npm install expo expo-router react-native-safe-area-context react-native-screens
+npm install @react-native-async-storage/async-storage
+```
+
+- **expo-router** : 탭 네비게이션 및 페이지 전환
+- **@react-native-async-storage/async-storage** : 로컬 저장소(일별 데이터 저장용)
+- **react-native-safe-area-context** : iOS 안전영역 대응
+- **react-native-screens** : 네이티브 화면 전환 성능 개선
+
+---
+
+## 🚀 실행 방법
+
+1. **패키지 설치**
    ```bash
    npm install
    ```
 
-2. Start the app
-
+2. **Expo 개발 서버 실행**
    ```bash
-   npx expo start
+   npx expo start --tunnel -c
    ```
+   - iPhone과 PC가 **같은 네트워크**에 연결되어 있어야 함.
+   - QR 코드 스캔 후 **Expo Go 앱**으로 실행.
 
-In the output, you'll find options to open the app in a
+3. **초기 진입**
+   - 앱 실행 시 자동으로 `일별(Daily)` 탭으로 이동합니다.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 📱 주요 기능 요약
 
-## Get a fresh project
+### 🍓 Daily (일별 탭)
+- 아침/점심/저녁 식단 입력  
+- 칼로리 입력 및 합계 자동 계산  
+- “💾 저장하기” 버튼으로 데이터 로컬 저장  
+- “◀ / ▶” 버튼으로 날짜 이동  
+- “오늘로 이동” 버튼으로 즉시 복귀  
 
-When you're ready, run:
+### 🍰 Weekly (주별 탭)
+- **월요일 시작 주** 기준으로 표시  
+- 각 날짜별 섭취 칼로리 총합 표시  
+- “전주 / 다음주” 이동 버튼  
+- 날짜 클릭 시 해당 일로 이동 (일별 탭 연결)
 
-```bash
-npm run reset-project
+### 🧁 Monthly (월별 탭)
+- **표 형태의 달력(7열 × 최대 6행)**  
+- 각 날짜 칸에 칼로리 합계가 바로 표시  
+- 말일 정렬/패딩 오류 보정  
+- 날짜 클릭 시 해당 일로 이동 (일별 탭 연결)  
+- 월 이동(◀ ▶) 버튼으로 이전/다음 달 탐색 가능  
+
+---
+
+## 💾 데이터 저장 구조
+
+모든 데이터는 `AsyncStorage` 로컬 DB에 저장됩니다.
+
+| Key 형식 | 예시 | 내용 |
+|-----------|------|------|
+| `meals-YYYY-MM-DD` | `meals-2025-11-01` | 해당 날짜의 식단 데이터 |
+
+데이터 구조:
+```json
+{
+  "Breakfast": [{ "name": "닭가슴살", "kcal": 200 }],
+  "Lunch": [{ "name": "계란", "kcal": 300 }],
+  "Dinner": [{ "name": "고구마", "kcal": 150 }]
+}
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## 🧩 디자인 포인트
 
-To learn more about developing your project with Expo, look at the following resources:
+- 전반적인 컬러 톤: **핑크 / 화이트 / 라이트그레이**
+- 폰트: 기본 iOS 시스템 폰트
+- 버튼/입력창: 부드러운 그림자와 둥근 모서리
+- 포커스: ‘오늘 날짜’ 강조, 저장 시 색상 변화(`💾 → ✅ 저장됨`)
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## 🐛 주요 수정 내역 (요약)
 
-Join our community of developers creating universal apps.
+| 수정 내용 | 설명 |
+|------------|------|
+| ✅ 일별 화면 날짜 이동 기능 | 어제/내일 버튼 및 오늘로 이동 버튼 추가 |
+| ✅ 일별 저장 반영 | 주·월 탭 데이터와 자동 동기화 |
+| ✅ 주별 요일 오류 수정 | UTC 문제 해결, 실제 요일(`getDay`) 반영 |
+| ✅ 월별 말일 정렬 오류 수정 | 7열 정렬 고정, 패딩 보정, 반칸 밀림 해결 |
+| ✅ 월별 클릭 오류 수정 | 누른 날짜로 정확히 이동하도록 수정 |
+| ✅ 달력형 디자인 | 날짜+칼로리 표시가 한눈에 들어오는 표형 구조로 개선 |
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
+
+## 🧠 추가 개선 아이디어 (향후 확장용)
+
+- 🔔 식단별 알림 / 리마인더 기능 추가
+- 📊 주간 평균 칼로리 그래프 시각화
+- 🌈 주말/평일 색상 차별화
+- ☁️ 클라우드 동기화 (Firebase 등)
+- 🥗 식품 데이터베이스 연동 자동 칼로리 입력
+
+---
+
+## 👨‍💻 개발자 메모
+
+> React Native와 Expo Router 학습용으로 만든 **프로토타입** 버전입니다.  
+> 로컬에서 동작하며, 서버 연동은 없습니다.  
+> 디자인은 심플하고 직관적인 ‘핑크 테마’에 초점을 맞췄습니다.
+
+---
+
+## 🪄 License
+
+MIT License © 2025  
+Developed by 이재혁

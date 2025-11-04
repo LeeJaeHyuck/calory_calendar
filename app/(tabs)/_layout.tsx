@@ -1,35 +1,42 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { Tabs } from "expo-router";
+import { useFonts } from "expo-font";
+import { Poppins_400Regular, Poppins_600SemiBold } from "@expo-google-fonts/poppins";
+import { NotoSansKR_400Regular, NotoSansKR_700Bold } from "@expo-google-fonts/noto-sans-kr";
+import AppLoading from "expo-app-loading";
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+export default function Layout() {
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_600SemiBold,
+    NotoSansKR_400Regular,
+    NotoSansKR_700Bold,
+  });
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  if (!fontsLoaded) {
+    return <AppLoading />;
+  }
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
+        tabBarActiveTintColor: "#FF80A0",
+        tabBarInactiveTintColor: "#FFB6C1",
+        tabBarStyle: {
+          backgroundColor: "#FFF5F8",
+          borderTopColor: "#FFD6E0",
+          height: 70,
+        },
+        tabBarLabelStyle: {
+          fontFamily: "Poppins_600SemiBold",
+          fontSize: 14,
+          marginBottom: 8,
+        },
+      }}
+    >
+      <Tabs.Screen name="daily" options={{ title: "일별" }} />
+      <Tabs.Screen name="weekly" options={{ title: "주별" }} />
+      <Tabs.Screen name="monthly" options={{ title: "월별" }} />
     </Tabs>
   );
 }
