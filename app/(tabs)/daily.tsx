@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, useFocusEffect } from "expo-router";
+import { useLocalSearchParams, useFocusEffect, useRouter } from "expo-router";
 
 interface Meal { name: string; kcal: number; }
 interface Meals { Breakfast: Meal[]; Lunch: Meal[]; Dinner: Meal[]; }
@@ -18,6 +18,12 @@ const formatDate = (d: Date) => {
 };
 
 export default function DailyScreen() {
+  //TODO: MyPage 임시, 이걸 설정페이지에서 입력받아 AsyncStorage에 담아야함.
+  const bmf = 1100;   // 기초대사량 
+  const goalFoodKcal = 800;
+  const goalExKcal = 0;
+  const goalSubKcal = bmf - goalFoodKcal + goalExKcal;
+
   const params = useLocalSearchParams();
   const [date, setDate] = useState<string>(formatDate(new Date()));
   const [meals, setMeals] = useState<Meals>({
@@ -71,9 +77,23 @@ export default function DailyScreen() {
   const saveMeals = async () => {
     await AsyncStorage.setItem(`meals-${date}`, JSON.stringify(meals));
     setIsSaved(true);
+
+    if (goalFoodKcal >= total && goalSubKcal <= subKcal) {
+      alert("참 잘했어요!");
+    } else {
+    
+      if (confirm(goalSubKcal - subKcal + "kcal 소모할 운동을 추천할까요?")) {
+        // TODO: 칼로리 범위에 따라 운동추천 case 
+        alert("플랭크 50초 3세트")
+      }
+    }
+
+    // TODO: 시작일로부터 지금까지 소모한 총 칼로리 AsyncStorage에 담기
+
   };
 
   const total = Object.values(meals).flat().reduce((s, m) => s + (m.kcal || 0), 0);
+  const subKcal = bmf - total;
 
   const changeDay = (offset: number) => {
     const d = new Date(date);
@@ -141,9 +161,14 @@ export default function DailyScreen() {
           renderItem={({ item }) => renderMeal(item)}
           keyExtractor={(item) => item}
         />
-
-        <Text style={styles.total}>Total: {total} kcal</Text>
-
+        {goalFoodKcal >= total ?
+          <Text style={styles.total}>총 섭취 칼로리: {total} kcal</Text>
+          : <Text style={styles.dangerous}>총 섭취 칼로리: {total} kcal</Text>
+        }
+        {goalSubKcal <= subKcal ?
+          <Text style={styles.total}>총 소모 칼로리: {subKcal} kcal</Text>
+          : <Text style={styles.dangerous}>총 소모 칼로리: {subKcal} kcal</Text>
+        }
         <TouchableOpacity onPress={saveMeals} style={[styles.saveButton, isSaved && { backgroundColor: "#F8BBD0" }]}>
           <Text style={styles.saveText}>{isSaved ? "✅ 저장됨" : "💾 저장하기"}</Text>
         </TouchableOpacity>
@@ -172,8 +197,11 @@ const styles = StyleSheet.create({
   delete: { fontSize: 20, color: "#FF9AB5" },
   addButton: { backgroundColor: pink, padding: 6, borderRadius: 6, alignItems: "center", marginTop: 5, width: 80 },
   addText: { color: "#FF6295", fontWeight: "600" },
-  total: { fontSize: 14, fontWeight: "700", textAlign: "right", marginTop: 15 },
-  saveButton: { position: "absolute", bottom: -10, alignSelf: "center", backgroundColor: deepPink, paddingHorizontal: 30, paddingVertical: 12, borderRadius: 30,
+  total: { bottom: -20, fontSize: 14, fontWeight: "700", textAlign: "right", marginTop: 0, color: "#77a4f8ff" },
+  dangerous: { bottom: -20, fontSize: 14, fontWeight: "700", textAlign: "right", marginTop: 0, color: "#949191ff"},
+  margins: { top: 10, fontSize: 20, fontWeight: "700", textAlign: "right"},
+  rem: { bottom: -20,},
+  saveButton: { position: "absolute", bottom: -25, alignSelf: "flex-start", backgroundColor: deepPink, paddingHorizontal: 30, paddingVertical: 12, borderRadius: 30,
     shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 5 },
   saveText: { color: "#fff", fontSize: 18, fontWeight: "700" },
 });
