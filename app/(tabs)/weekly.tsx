@@ -1,8 +1,8 @@
-import React, { useState, useCallback } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
+import { default as React, useCallback, useState } from "react";
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const KR_DAY = ["일", "월", "화", "수", "목", "금", "토"];
 const formatDate = (d: Date) => {
