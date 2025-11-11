@@ -131,7 +131,7 @@ export default function SettingsScreen() {
           if (isEditing) saveSettings();
           else setIsEditing(true);
         }}
-        style={[styles.saveButton, isEditing && { backgroundColor: "#FF80A0" }]}
+        style={styles.saveButton}
       >
         <Text style={styles.saveText}>{isEditing ? "💾 저장하기" : "✏️ 수정하기"}</Text>
       </TouchableOpacity>
@@ -184,9 +184,10 @@ const styles = StyleSheet.create({
   viewText: { flex: 1, textAlign: "right", fontSize: 16, color: "#333", fontWeight: "600" },
   saveButton: {
     backgroundColor: deepPink,
-    borderRadius: 10,
+    shadowColor: "#000",
+    borderRadius: 30,
     alignSelf: "center",
-    paddingHorizontal: 30,
+    paddingHorizontal: 20,
     paddingVertical: 10,
     marginBottom: 30,
   },
