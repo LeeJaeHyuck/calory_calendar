@@ -6,11 +6,14 @@ import {
   AppState,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -37,23 +40,11 @@ export default function DailyScreen() {
   const [bmf, setBmf] = useState(1100); // 기초대사량
   const [goalFoodKcal, setGoalFoodKcal] = useState(800); // 목표 섭취량
   const [goalExKcal, setGoalExKcal] = useState(0); // 추가 운동 목표
-  // 목표 소모량
+
   const goalSubKcal = React.useMemo(
     () => bmf - goalFoodKcal + goalExKcal,
     [bmf, goalFoodKcal, goalExKcal]
   );
-
-  // useEffect(() => {
-  //   (async () => {
-  //     const userSettings = await AsyncStorage.getItem("user-settings");
-  //     if (userSettings) {
-  //       const parsed = JSON.parse(userSettings);
-  //       setBmf(parsed.bmr || 1100);
-  //       setGoalFoodKcal(parsed.intake || 800);
-  //       setGoalExKcal(parsed.exercise || 0);
-  //     }
-  //   })();
-  // }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -77,6 +68,7 @@ export default function DailyScreen() {
     Dinner: [{ name: "", kcal: 0 }],
   });
   const [isSaved, setIsSaved] = useState(false);
+  const [showTooltip, setShowTooltip] = useState<null | "intake" | "burn">(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -98,25 +90,23 @@ export default function DailyScreen() {
     })();
   }, [date]);
 
+  useEffect(() => {
+    const reloadOnFocus = async () => {
+      const saved = await AsyncStorage.getItem("user-settings");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setBmf(parsed.bmr || 1100);
+        setGoalFoodKcal(parsed.intake || 800);
+        setGoalExKcal(parsed.exercise || 0);
+      }
+    };
 
-    useEffect(() => {
-      const reloadOnFocus = async () => {
-        const saved = await AsyncStorage.getItem("user-settings");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          setBmf(parsed.bmr || 1100);
-          setGoalFoodKcal(parsed.intake || 800);
-          setGoalExKcal(parsed.exercise || 0);
-        }
-      };
-  
-      // 앱이 포그라운드로 돌아오거나 탭 포커스될 때 다시 로드
-      const sub = AppState.addEventListener("change", (state) => {
-        if (state === "active") reloadOnFocus();
-      });
-  
-      return () => sub.remove();
-    }, []);
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") reloadOnFocus();
+    });
+
+    return () => sub.remove();
+  }, []);
 
   const updateMeal = (
     type: keyof Meals,
@@ -125,8 +115,13 @@ export default function DailyScreen() {
     value: string
   ) => {
     const updated = { ...meals };
-    updated[type][index][key] =
-      key === "kcal" ? parseInt(value) || 0 : (value as any);
+    updated[type] = [...updated[type]];
+    updated[type][index] = { ...updated[type][index] };
+    if (key === "kcal") {
+      updated[type][index][key] = parseInt(value) || 0;
+    } else if (key === "name") {
+      updated[type][index][key] = value;
+    }
     setMeals(updated);
     setIsSaved(false);
   };
@@ -154,7 +149,6 @@ export default function DailyScreen() {
     await AsyncStorage.setItem(`meals-${date}`, JSON.stringify(meals));
     setIsSaved(true);
 
-    // ✅ 목표 달성 여부 계산
     if (goalFoodKcal >= total && goalSubKcal <= subKcal) {
       Alert.alert("참 잘했어요! 🎉", "오늘 목표를 달성했습니다!");
     } else {
@@ -168,7 +162,6 @@ export default function DailyScreen() {
             {
               text: "추천받기",
               onPress: () => {
-                // ✅ 칼로리 범위별 운동 추천
                 if (diff <= 100)
                   Alert.alert("운동 추천 🏋️‍♂️", "플랭크 50초 × 3세트");
                 else if (diff <= 300)
@@ -263,34 +256,72 @@ export default function DailyScreen() {
           keyExtractor={(item) => item}
         />
 
-        <Text
-          style={[
-            styles.total,
-            total > goalFoodKcal && { color: "#FF6B6B" },
-          ]}
-        >
-          총 섭취 칼로리: {total} kcal
-        </Text>
-        <Text
-          style={[
-            styles.total,
-            subKcal < goalSubKcal && { color: "#FF6B6B" },
-          ]}
-        >
-          총 소모 칼로리: {subKcal} kcal
-        </Text>
+        {/* ✅ 하단 영역 (버튼 + 정보 나란히) */}
+        <View style={styles.bottomRow}>
+          <TouchableOpacity
+            onPress={saveMeals}
+            style={[
+              styles.saveButton,
+              isSaved && { backgroundColor: "#F8BBD0" },
+            ]}
+          >
+            <Text style={styles.saveText}>
+              {isSaved ? "✅ 저장됨" : "💾 저장하기"}
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={saveMeals}
-          style={[
-            styles.saveButton,
-            isSaved && { backgroundColor: "#F8BBD0" },
-          ]}
+          <View>
+            <View style={styles.infoRow}>
+              <Text
+                style={[
+                  styles.total,
+                  total > goalFoodKcal && { color: "#FF6B6B" },
+                ]}
+              >
+                총 섭취 칼로리: {total} kcal
+              </Text>
+              <Pressable onPress={() => setShowTooltip("intake")}>
+                <Text style={styles.infoIcon}>ⓘ</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text
+                style={[
+                  styles.total,
+                  subKcal < goalSubKcal && { color: "#FF6B6B" },
+                ]}
+              >
+                총 소모 칼로리: {subKcal} kcal
+              </Text>
+              <Pressable onPress={() => setShowTooltip("burn")}>
+                <Text style={styles.infoIcon}>ⓘ</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* ✅ 툴팁 모달 */}
+        <Modal
+          transparent
+          visible={!!showTooltip}
+          animationType="fade"
+          onRequestClose={() => setShowTooltip(null)}
         >
-          <Text style={styles.saveText}>
-            {isSaved ? "✅ 저장됨" : "💾 저장하기"}
-          </Text>
-        </TouchableOpacity>
+          <TouchableWithoutFeedback onPress={() => setShowTooltip(null)}>
+            <View style={styles.modalOverlay}>
+              {showTooltip && (
+                <View style={styles.tooltipBox}>
+                  <Text style={styles.tooltipText}>
+                    {showTooltip === "intake"
+                      ? "하루 동안 섭취한 모든 음식의 총 칼로리 합계예요."
+                      : "기초대사량 + 운동량 - 섭취량으로 계산된 실제 소모 칼로리예요."}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -364,21 +395,55 @@ const styles = StyleSheet.create({
     width: 80,
   },
   addText: { color: "#FF6295", fontWeight: "600" },
+
+  bottomRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 10,
+  },
   total: {
-    bottom: -20,
     fontSize: 14,
     fontWeight: "700",
-    textAlign: "right",
-    marginTop: 0,
     color: "#77a4f8ff",
   },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  infoIcon: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: "#9AA0A6",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  tooltipBox: {
+    backgroundColor: "#FFF",
+    padding: 15,
+    borderRadius: 12,
+    maxWidth: "80%",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  tooltipText: {
+    color: "#333",
+    fontSize: 15,
+    lineHeight: 20,
+  },
   saveButton: {
-    position: "absolute",
-    bottom: -25,
-    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: deepPink,
-    paddingHorizontal: 30,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 30,
     shadowColor: "#000",
     shadowOpacity: 0.15,

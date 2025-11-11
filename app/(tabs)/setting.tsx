@@ -22,8 +22,8 @@ export default function SettingsScreen() {
   const [bmr, setBmr] = useState("");
   const [intake, setIntake] = useState("");
   const [exercise, setExercise] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
 
-  // ✅ 설정 불러오기 (탭을 다시 열 때마다 자동 실행)
   useFocusEffect(
     React.useCallback(() => {
       (async () => {
@@ -40,11 +40,6 @@ export default function SettingsScreen() {
     }, [])
   );
 
-  const totalBurn = Math.max(
-    0,
-    (parseInt(intake) || 0) - (parseInt(exercise) || 0)
-  );
-
   const saveSettings = async () => {
     const data = {
       weight,
@@ -55,8 +50,34 @@ export default function SettingsScreen() {
     };
     await AsyncStorage.setItem("user-settings", JSON.stringify(data));
     alert("설정이 저장되었습니다! 💾");
+    setIsEditing(false);
   };
   
+  // 소모 칼로리 계산
+  const totalBurn = Math.max(
+    0,
+    (parseInt(bmr) || 0) + (parseInt(exercise) || 0) - (parseInt(intake) || 0)
+  );
+
+  const renderField = (label: string, value: string, setter: (text: string) => void, unit: string, placeholder: string) => {
+    return (
+      <View style={styles.row}>
+        <Text style={styles.label}>{label}</Text>
+        {isEditing ? (
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            value={value || ""}
+            onChangeText={(text) => setter(text || "")}
+            placeholder={placeholder}
+          />
+        ) : (
+          <Text style={styles.viewText}>{value ? `${value}` : '-'} </Text>
+        )}
+        {!isEditing && <Text style={styles.unit}>{unit}</Text>}
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -70,7 +91,6 @@ export default function SettingsScreen() {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            {/* 👤 헤더 */}
             <View style={styles.header}>
               <TouchableOpacity style={styles.profileCircle}>
                 <Image
@@ -82,99 +102,38 @@ export default function SettingsScreen() {
               <Text style={styles.title}>My Page</Text>
             </View>
 
-            {/* 📦 기본 정보 */}
             <View style={styles.box}>
               <Text style={styles.sectionTitle}>기본 정보</Text>
-
-              <View style={styles.row}>
-                <Text style={styles.label}>현재 몸무게 :</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={weight}
-                  onChangeText={setWeight}
-                  returnKeyType="done"
-                  blurOnSubmit={true}
-                  placeholder="예: 60"
-                />
-                <Text style={styles.unit}>kg</Text>
-              </View>
-
-              <View style={styles.row}>
-                <Text style={styles.label}>목표 몸무게 :</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={targetWeight}
-                  onChangeText={setTargetWeight}
-                  returnKeyType="done"
-                  blurOnSubmit={true}
-                  placeholder="예: 55"
-                />
-                <Text style={styles.unit}>kg</Text>
-              </View>
-
-              <View style={styles.row}>
-                <Text style={styles.label}>기초대사량 :</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={bmr}
-                  onChangeText={setBmr}
-                  returnKeyType="done"
-                  blurOnSubmit={true}
-                  placeholder="예: 1500"
-                />
-                <Text style={styles.unit}>kcal</Text>
-              </View>
+              {renderField("현재 몸무게 :", weight, setWeight, " kg", "예: 60")}
+              {renderField("목표 몸무게 :", targetWeight, setTargetWeight, " kg", "예: 55")}
+              {renderField("기초대사량 :", bmr, setBmr, " kcal", "예: 1500")}
             </View>
 
-            {/* 🎯 목표 섹션 */}
             <View style={styles.box}>
               <Text style={styles.sectionTitle}>목표</Text>
+              {renderField("섭취 칼로리 :", intake, setIntake, " kcal", "예: 1800")}
+              {renderField("운동 칼로리 :", exercise, setExercise, " kcal", "예: 300")}
 
-              <View style={styles.row}>
-                <Text style={styles.label}>섭취 칼로리 :</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={intake}
-                  onChangeText={setIntake}
-                  returnKeyType="done"
-                  blurOnSubmit={true}
-                  placeholder="예: 1800"
-                />
-                <Text style={styles.unit}>kcal</Text>
-              </View>
-
-              <View style={styles.row}>
-                <Text style={styles.label}>운동 칼로리 :</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={exercise}
-                  onChangeText={setExercise}
-                  returnKeyType="done"
-                  blurOnSubmit={true}
-                  placeholder="예: 300"
-                />
-                <Text style={styles.unit}>kcal</Text>
-              </View>
-
-              <View style={[styles.row, styles.totalRow]}>
-                <Text style={[styles.label, { color: "#333" }]}>
-                  소모 칼로리 :
-                </Text>
-                <Text style={styles.totalValue}>{totalBurn} kcal</Text>
-              </View>
+              {/* ✅ 보기 모드에서만 표시 */}
+              {!isEditing && (
+                <View style={[styles.row, styles.totalRow]}>
+                  <Text style={[styles.label, { color: "#333" }]}>소모 칼로리 :</Text>
+                  <Text style={styles.totalValue}>{totalBurn} kcal</Text>
+                </View>
+              )}
             </View>
           </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
 
-      {/* 💾 저장 버튼 */}
-      <TouchableOpacity onPress={saveSettings} style={styles.saveButton}>
-        <Text style={styles.saveText}>💾 저장하기</Text>
+      <TouchableOpacity
+        onPress={() => {
+          if (isEditing) saveSettings();
+          else setIsEditing(true);
+        }}
+        style={[styles.saveButton, isEditing && { backgroundColor: "#FF80A0" }]}
+      >
+        <Text style={styles.saveText}>{isEditing ? "💾 저장하기" : "✏️ 수정하기"}</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -184,39 +143,21 @@ const pink = "#FFD6E0";
 const deepPink = "#FFB6C1";
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFF5F8",
-  },
-  scrollContent: {
-    padding: 20,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 25,
-  },
+  container: { flex: 1, backgroundColor: "#FFF5F8" },
+  scrollContent: { padding: 20 },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 25 },
   profileCircle: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "#FFD6E0",
+    backgroundColor: pink,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 15,
     overflow: "hidden",
   },
-  profileImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    resizeMode: "cover",
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: "700",
-    color: "#FF80A0",
-  },
+  profileImage: { width: 60, height: 60, borderRadius: 30, resizeMode: "cover" },
+  title: { fontSize: 26, fontWeight: "700", color: "#FF80A0" },
   box: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -226,23 +167,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#FF7FA0",
-    marginBottom: 10,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  label: {
-    flex: 1.2,
-    fontSize: 16,
-    color: "#444",
-    fontWeight: "500",
-  },
+  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#FF7FA0", marginBottom: 10 },
+  row: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  label: { flex: 1.2, fontSize: 16, color: "#444", fontWeight: "500" },
   input: {
     flex: 1,
     borderWidth: 1,
@@ -253,12 +180,18 @@ const styles = StyleSheet.create({
     textAlign: "right",
     backgroundColor: "#FFF",
   },
-  unit: {
-    width: 40,
-    textAlign: "left",
-    fontSize: 15,
-    color: "#888",
+  unit: { width: 40, textAlign: "left", fontSize: 15, color: "#888" },
+  viewText: { flex: 1, textAlign: "right", fontSize: 16, color: "#333", fontWeight: "600" },
+  saveButton: {
+    backgroundColor: deepPink,
+    borderRadius: 10,
+    alignSelf: "center",
+    paddingHorizontal: 30,
+    paddingVertical: 10,
+    marginBottom: 30,
   },
+  saveText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+
   totalRow: {
     marginTop: 10,
     borderTopWidth: 1,
@@ -272,17 +205,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FF7FA0",
   },
-  saveButton: {
-    backgroundColor: "#FFB6C1",
-    borderRadius: 10,
-    alignSelf: "center",
-    paddingHorizontal: 30,
-    paddingVertical: 10,
-    marginBottom: 30,
-  },
-  saveText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#fff",
-  },
+
 });
