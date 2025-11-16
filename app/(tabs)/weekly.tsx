@@ -81,9 +81,9 @@ export default function WeeklyScreen() {
       d.setDate(monday.getDate() + i);
       const dateStr = formatDate(d);
 
-      let breakfast = { total: 0, items: [] };
-      let lunch = { total: 0, items: [] };
-      let dinner = { total: 0, items: [] };
+      let breakfast: MealInfo = { total: 0, items: [] };
+      let lunch: MealInfo = { total: 0, items: [] };
+      let dinner: MealInfo = { total: 0, items: [] };
 
       try {
         const raw = await AsyncStorage.getItem(`meals-${dateStr}`);
@@ -139,7 +139,6 @@ export default function WeeklyScreen() {
         meal.items.map((f, i) => (
           <View key={i} style={styles.mealItemGroup}>
             <Text style={styles.mealItemName}>{f.name || "(이름없음)"}</Text>
-            <Text style={styles.mealItemKcal}>{f.kcal} kcal</Text>
           </View>
         ))
       ) : (
@@ -200,19 +199,21 @@ export default function WeeklyScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.weekNav}>
-        <TouchableOpacity onPress={goPrevWeek}>
-          <Text style={styles.navText}>◀ 전주</Text>
-        </TouchableOpacity>
-        <Text style={styles.weekTitle}>{headerTitle}</Text>
-        <TouchableOpacity onPress={goNextWeek}>
-          <Text style={styles.navText}>다음주 ▶</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={goPrevWeek}>
+            <Text style={styles.navBtn}>◀</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity onPress={goThisWeek} style={styles.todayButton}>
-        <Text style={styles.todayText}>이번주로 이동</Text>
-      </TouchableOpacity>
+          <Text style={styles.title}>{headerTitle}</Text>
+
+          <TouchableOpacity onPress={goNextWeek}>
+            <Text style={styles.navBtn}>▶</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity onPress={goThisWeek} style={styles.todayButton}>
+          <Text style={styles.todayText}>이번주로 이동</Text>
+        </TouchableOpacity>
 
       <ScrollView style={styles.tableWrapper} contentContainerStyle={{ paddingBottom: 20 }}>
         {renderHeader()}
@@ -238,7 +239,11 @@ const deepPink = "#FFB6C1";
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFF5F8", padding: 20 },
-  title: { fontSize: 22, fontWeight: "700", color: "#FF80A0", marginBottom: 12 },
+  title: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#FF80A0",
+  },
 
   weekNav: {
     flexDirection: "row",
@@ -263,7 +268,7 @@ const styles = StyleSheet.create({
   },
 
   row: { flexDirection: "row", alignItems: "flex-start", paddingVertical: 8, paddingHorizontal: 6 },
-  cell: { textAlign: "center" },
+  cell: { flex: 1 },
 
   headerRow: { backgroundColor: pink, borderRadius: 10, marginBottom: 6 },
   headerText: { fontWeight: "700", color: "#FF4F84", textAlign: "center" },
@@ -287,6 +292,7 @@ const styles = StyleSheet.create({
   separator: { height: 6 },
   emptyBox: { paddingVertical: 18, alignItems: "center" },
   emptyText: { color: "#9AA0A6" },
+
   todayButton: {
     backgroundColor: deepPink,
     paddingVertical: 6,
@@ -312,6 +318,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#FF7FA0", // ✅ 칼로리 색상 강조
     fontWeight: "700",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  navBtn: {
+    fontSize: 28,
+    color: "#FF7FA0",
+    fontWeight: "600",
   },
   
 });

@@ -36,15 +36,10 @@ const formatDate = (d: Date) => {
 };
 
 export default function DailyScreen() {
-  // ⚙️ MyPage 연동
-  const [bmf, setBmf] = useState(1100); // 기초대사량
-  const [goalFoodKcal, setGoalFoodKcal] = useState(800); // 목표 섭취량
-  const [goalExKcal, setGoalExKcal] = useState(0); // 추가 운동 목표
-
-  const goalSubKcal = React.useMemo(
-    () => bmf - goalFoodKcal + goalExKcal,
-    [bmf, goalFoodKcal, goalExKcal]
-  );
+  // ⚙️ Setting에서 가져오는 값들 (이제 goalBurn만 사용)
+  const [bmr, setBmr] = useState(1100);
+  const [goalBurn, setGoalBurn] = useState(0); // 🔥 목표 소모 칼로리
+  const [exercise, setExercise] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -52,13 +47,21 @@ export default function DailyScreen() {
         const saved = await AsyncStorage.getItem("user-settings");
         if (saved) {
           const parsed = JSON.parse(saved);
-          setBmf(parsed.bmr || 1100);
-          setGoalFoodKcal(parsed.intake || 800);
-          setGoalExKcal(parsed.exercise || 0);
+          setBmr(parsed.bmr || 1100);
+          setGoalBurn(parsed.goalBurn || 0); // 🔥 저장된 goalBurn만 가져옴
         }
       })();
     }, [])
   );
+
+  const KR_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
+  const formatKoreanDate = (date: Date) => {
+    const year = String(date.getFullYear()).slice(2);
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const weekLabel = KR_WEEK[date.getDay()];
+    return `${year}년 ${month}월 ${day}일 (${weekLabel})`;
+  };
 
   const params = useLocalSearchParams();
   const [date, setDate] = useState<string>(formatDate(new Date()));
@@ -70,6 +73,7 @@ export default function DailyScreen() {
   const [isSaved, setIsSaved] = useState(false);
   const [showTooltip, setShowTooltip] = useState<null | "intake" | "burn">(null);
 
+  // 날짜 이동 시 데이터 불러오기
   useFocusEffect(
     useCallback(() => {
       if (params?.date) setDate(String(params.date));
@@ -80,34 +84,35 @@ export default function DailyScreen() {
     (async () => {
       const saved = await AsyncStorage.getItem(`meals-${date}`);
       if (saved) setMeals(JSON.parse(saved));
-      else
+      else {
         setMeals({
           Breakfast: [{ name: "", kcal: 0 }],
           Lunch: [{ name: "", kcal: 0 }],
           Dinner: [{ name: "", kcal: 0 }],
         });
+      }
       setIsSaved(false);
     })();
   }, [date]);
 
+  // 앱 재진입 시 최신 goalBurn/bmr 로드
   useEffect(() => {
     const reloadOnFocus = async () => {
       const saved = await AsyncStorage.getItem("user-settings");
       if (saved) {
         const parsed = JSON.parse(saved);
-        setBmf(parsed.bmr || 1100);
-        setGoalFoodKcal(parsed.intake || 800);
-        setGoalExKcal(parsed.exercise || 0);
+        setBmr(parsed.bmr || 0);
+        setGoalBurn(parsed.goalBurn || 0);
+        setExercise(parsed.exercise || 0);
       }
     };
-
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") reloadOnFocus();
     });
-
     return () => sub.remove();
   }, []);
 
+  // 음식 업데이트
   const updateMeal = (
     type: keyof Meals,
     index: number,
@@ -117,15 +122,15 @@ export default function DailyScreen() {
     const updated = { ...meals };
     updated[type] = [...updated[type]];
     updated[type][index] = { ...updated[type][index] };
-    if (key === "kcal") {
-      updated[type][index][key] = parseInt(value) || 0;
-    } else if (key === "name") {
-      updated[type][index][key] = value;
-    }
+
+    if (key === "kcal") updated[type][index][key] = parseInt(value) || 0;
+    else updated[type][index][key] = value;
+
     setMeals(updated);
     setIsSaved(false);
   };
 
+  // 음식 추가/삭제
   const addMeal = (type: keyof Meals) => {
     const updated = { ...meals };
     updated[type].push({ name: "", kcal: 0 });
@@ -140,43 +145,25 @@ export default function DailyScreen() {
     setIsSaved(false);
   };
 
+  // 총 섭취 kcal
   const total = Object.values(meals)
     .flat()
     .reduce((s, m) => s + (m.kcal || 0), 0);
-  const subKcal = bmf - total; // 실제 소모량
 
+  // 실제 소모량 = BMR - 섭취량
+  const subKcal = bmr + exercise - total;
+
+  // 저장
   const saveMeals = async () => {
     await AsyncStorage.setItem(`meals-${date}`, JSON.stringify(meals));
     setIsSaved(true);
 
-    if (goalFoodKcal >= total && goalSubKcal <= subKcal) {
+    // 목표 달성 여부 계산
+    if (subKcal >= goalBurn) {
       Alert.alert("참 잘했어요! 🎉", "오늘 목표를 달성했습니다!");
     } else {
-      const diff = goalSubKcal - subKcal;
-      if (diff > 0) {
-        Alert.alert(
-          "운동 추천",
-          `${diff} kcal 소모할 운동을 추천할까요?`,
-          [
-            { text: "취소", style: "cancel" },
-            {
-              text: "추천받기",
-              onPress: () => {
-                if (diff <= 100)
-                  Alert.alert("운동 추천 🏋️‍♂️", "플랭크 50초 × 3세트");
-                else if (diff <= 300)
-                  Alert.alert("운동 추천 🏃‍♀️", "러닝 10분");
-                else if (diff <= 500)
-                  Alert.alert("운동 추천 🧘‍♀️", "스쿼트 30회 × 3세트");
-                else
-                  Alert.alert("운동 추천 💪", "런지 20회 × 4세트 + 스트레칭");
-              },
-            },
-          ]
-        );
-      } else {
-        Alert.alert("좋아요 👍", "소모량이 목표를 초과했어요!");
-      }
+      const diff = goalBurn - subKcal;
+      Alert.alert("조금만 더 힘내세요! 💪", `목표까지 ${diff} kcal 남았어요!`);
     }
   };
 
@@ -240,7 +227,8 @@ export default function DailyScreen() {
           <TouchableOpacity onPress={() => changeDay(-1)}>
             <Text style={styles.navBtn}>◀</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>🍓 {date}</Text>
+          <Text style={styles.title}>🍓 {formatKoreanDate(new Date(date))}</Text>
+
           <TouchableOpacity onPress={() => changeDay(1)}>
             <Text style={styles.navBtn}>▶</Text>
           </TouchableOpacity>
@@ -256,7 +244,7 @@ export default function DailyScreen() {
           keyExtractor={(item) => item}
         />
 
-        {/* ✅ 하단 영역 (버튼 + 정보 나란히) */}
+        {/* 하단 계산 결과 */}
         <View style={styles.bottomRow}>
           <TouchableOpacity
             onPress={saveMeals}
@@ -275,7 +263,7 @@ export default function DailyScreen() {
               <Text
                 style={[
                   styles.total,
-                  total > goalFoodKcal && { color: "#FF6B6B" },
+                  total >= 999999 ? { color: "#FF6B6B" } : {},
                 ]}
               >
                 총 섭취 칼로리: {total} kcal
@@ -289,7 +277,7 @@ export default function DailyScreen() {
               <Text
                 style={[
                   styles.total,
-                  subKcal < goalSubKcal && { color: "#FF6B6B" },
+                  subKcal < goalBurn && { color: "#FF6B6B" },
                 ]}
               >
                 총 소모 칼로리: {subKcal} kcal
@@ -301,7 +289,7 @@ export default function DailyScreen() {
           </View>
         </View>
 
-        {/* ✅ 툴팁 모달 */}
+        {/* 툴팁 */}
         <Modal
           transparent
           visible={!!showTooltip}
@@ -315,7 +303,7 @@ export default function DailyScreen() {
                   <Text style={styles.tooltipText}>
                     {showTooltip === "intake"
                       ? "하루 동안 섭취한 모든 음식의 총 칼로리 합계예요."
-                      : "기초대사량 + 운동량 - 섭취량으로 계산된 실제 소모 칼로리예요."}
+                      : "기초대사량 + 운동칼로리 - 섭취 칼로리로 계산된 실제 소모 칼로리예요."}
                   </Text>
                 </View>
               )}
@@ -395,7 +383,6 @@ const styles = StyleSheet.create({
     width: 80,
   },
   addText: { color: "#FF6295", fontWeight: "600" },
-
   bottomRow: {
     flexDirection: "row",
     justifyContent: "space-between",
