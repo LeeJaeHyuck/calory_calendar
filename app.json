@@ -2,6 +2,7 @@
   "expo": {
     "name": "WeeklyMealPlanner",
     "slug": "WeeklyMealPlanner",
+    "platforms": ["ios", "web"],
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -11,6 +12,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jack.weeklymealplanner",
+      "buildNumber": "1.0.0",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
