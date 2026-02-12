@@ -8,6 +8,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -44,11 +45,16 @@ type WeekRow = {
   lunch: MealInfo;
   dinner: MealInfo;
   total: number;
+  weight: number;
+  exercise: number;
+  photos: { uri: string; timestamp: string }[];
 };
 
 export default function WeeklyScreen() {
   const [weekData, setWeekData] = useState<WeekRow[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [viewMode, setViewMode] = useState<"all" | "photos" | "calories">("all");
+  const [bmr, setBmr] = useState(0);
   const router = useRouter();
 
   const safeMeal = (maybeArr: any): MealInfo => {
@@ -67,6 +73,18 @@ export default function WeeklyScreen() {
   };
 
   const loadWeeklyData = useCallback(async () => {
+    // 설정에서 뷰 모드 및 BMR 불러오기
+    try {
+      const settings = await AsyncStorage.getItem("user-settings");
+      if (settings) {
+        const parsed = JSON.parse(settings);
+        setViewMode(parsed.weeklyViewMode || "all");
+        setBmr(parsed.bmr || 0);
+      }
+    } catch (e) {
+      console.error("Failed to load view mode:", e);
+    }
+
     const base = new Date();
     base.setDate(base.getDate() + weekOffset * 7);
     const day = base.getDay();
@@ -84,6 +102,9 @@ export default function WeeklyScreen() {
       let breakfast: MealInfo = { total: 0, items: [] };
       let lunch: MealInfo = { total: 0, items: [] };
       let dinner: MealInfo = { total: 0, items: [] };
+      let weight = 0;
+      let exercise = 0;
+      let photos: { uri: string; timestamp: string }[] = [];
 
       try {
         const raw = await AsyncStorage.getItem(`meals-${dateStr}`);
@@ -93,14 +114,32 @@ export default function WeeklyScreen() {
           lunch = safeMeal(parsed?.Lunch);
           dinner = safeMeal(parsed?.Dinner);
         }
+
+        const weightRaw = await AsyncStorage.getItem(`weight-${dateStr}`);
+        if (weightRaw) {
+          weight = JSON.parse(weightRaw);
+        }
+
+        const exerciseRaw = await AsyncStorage.getItem(`exercise-${dateStr}`);
+        if (exerciseRaw) {
+          exercise = JSON.parse(exerciseRaw);
+        }
+
+        const photosRaw = await AsyncStorage.getItem(`photos-${dateStr}`);
+        if (photosRaw) {
+          photos = JSON.parse(photosRaw);
+        }
       } catch {
         breakfast = { total: 0, items: [] };
         lunch = { total: 0, items: [] };
         dinner = { total: 0, items: [] };
+        weight = 0;
+        exercise = 0;
+        photos = [];
       }
 
       const total = breakfast.total + lunch.total + dinner.total;
-      results.push({ date: dateStr, breakfast, lunch, dinner, total });
+      results.push({ date: dateStr, breakfast, lunch, dinner, total, weight, exercise, photos });
     }
 
     setWeekData(results);
@@ -147,22 +186,62 @@ export default function WeeklyScreen() {
     </View>
   );
 
-  const renderHeader = () => (
-    <View style={[styles.row, styles.headerRow]}>
-      <Text style={[styles.cell, styles.dateCell, styles.headerText]}>
-        날짜
-      </Text>
-      <Text style={[styles.cell, styles.mealCell, styles.headerText]}>
-        아침
-      </Text>
-      <Text style={[styles.cell, styles.mealCell, styles.headerText]}>
-        점심
-      </Text>
-      <Text style={[styles.cell, styles.mealCell, styles.headerText]}>
-        저녁
-      </Text>
-    </View>
-  );
+  const renderHeader = () => {
+    // 사진만 보기 모드
+    if (viewMode === "photos") {
+      return (
+        <View style={[styles.row, styles.headerRow]}>
+          <Text style={[styles.cell, styles.dateCell, styles.headerText]}>
+            날짜
+          </Text>
+          <Text style={[styles.cell, styles.photoCell, styles.headerText]}>
+            식단 사진
+          </Text>
+        </View>
+      );
+    }
+
+    // 칼로리+몸무게 모드
+    if (viewMode === "calories") {
+      return (
+        <View style={[styles.row, styles.headerRow]}>
+          <Text style={[styles.cell, styles.dateCell, styles.headerText]}>
+            날짜
+          </Text>
+          <Text style={[styles.cell, styles.calorieInfoCell, styles.headerText]}>
+            순소모
+          </Text>
+          <Text style={[styles.cell, styles.calorieInfoCell, styles.headerText]}>
+            몸무게
+          </Text>
+        </View>
+      );
+    }
+
+    // 전체 보기 모드 (기본)
+    return (
+      <View style={[styles.row, styles.headerRow]}>
+        <Text style={[styles.cell, styles.dateCell, styles.headerText]}>
+          날짜
+        </Text>
+        <Text style={[styles.cell, styles.mealCell, styles.headerText]}>
+          아침
+        </Text>
+        <Text style={[styles.cell, styles.mealCell, styles.headerText]}>
+          점심
+        </Text>
+        <Text style={[styles.cell, styles.mealCell, styles.headerText]}>
+          저녁
+        </Text>
+        {/* <Text style={[styles.cell, styles.weightCell, styles.headerText]}>
+          몸무게
+        </Text> */}
+        {/* <Text style={[styles.cell, styles.weightCell, styles.headerText]}>
+          운동
+        </Text> */}
+      </View>
+    );
+  };
 
   const renderItem = ({ item }: { item: WeekRow }) => {
     const d = new Date(item.date);
@@ -171,6 +250,74 @@ export default function WeeklyScreen() {
       d.getDate()
     ).padStart(2, "0")} (${dayName})`;
 
+    // 사진만 보기 모드
+    if (viewMode === "photos") {
+      return (
+        <TouchableOpacity
+          onPress={() => router.push(`/(tabs)/daily?date=${item.date}`)}
+          style={[styles.row, styles.dataRow]}
+          activeOpacity={0.85}
+        >
+          <View style={[styles.cell, styles.dateCell]}>
+            <Text style={styles.dateText}>{label}</Text>
+          </View>
+
+          <View style={[styles.cell, styles.photoCell]}>
+            {item.photos.length > 0 ? (
+              <View style={styles.photoGridInWeekly}>
+                {item.photos.slice(0, 3).map((photo, idx) => (
+                  <Image
+                    key={idx}
+                    source={{ uri: photo.uri }}
+                    style={styles.photoThumbnail}
+                  />
+                ))}
+                {item.photos.length > 3 && (
+                  <View style={styles.morePhotosOverlay}>
+                    <Text style={styles.morePhotosText}>+{item.photos.length - 3}</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <Text style={styles.mealItemEmpty}>사진 없음</Text>
+            )}
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    // 칼로리+몸무게 모드
+    if (viewMode === "calories") {
+      // 순소모 = BMR - 섭취 + 운동
+      const netBurn = bmr - item.total + item.exercise;
+      const netBurnColor = netBurn >= 0 ? "#4CAF50" : "#FF6B6B";
+
+      return (
+        <TouchableOpacity
+          onPress={() => router.push(`/(tabs)/daily?date=${item.date}`)}
+          style={[styles.row, styles.dataRow]}
+          activeOpacity={0.85}
+        >
+          <View style={[styles.cell, styles.dateCell]}>
+            <Text style={styles.dateText}>{label}</Text>
+          </View>
+
+          <View style={[styles.cell, styles.calorieInfoCell]}>
+            <Text style={[styles.netBurnText, { color: netBurnColor }]}>
+              {netBurn ? `${netBurn > 0 ? '+' : ''}${netBurn} kcal` : "-"}
+            </Text>
+          </View>
+
+          <View style={[styles.cell, styles.calorieInfoCell]}>
+            <Text style={styles.weightText}>
+              {item.weight ? `${item.weight} kg` : "-"}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    // 전체 보기 모드 (기본)
     return (
       <TouchableOpacity
         onPress={() => router.push(`/(tabs)/daily?date=${item.date}`)}
@@ -181,6 +328,9 @@ export default function WeeklyScreen() {
           <Text style={styles.dateText}>{label}</Text>
           <Text style={styles.totalUnderDate}>
             {item.total ? `${item.total} kcal` : "-"}
+          </Text>
+          <Text style={styles.exerciseText}>
+            {item.weight ? `${item.weight} kg` : "-"}
           </Text>
         </View>
 
@@ -193,6 +343,16 @@ export default function WeeklyScreen() {
         <View style={[styles.cell, styles.mealCell]}>
           {renderMealBox(item.dinner)}
         </View>
+        {/* <View style={[styles.cell, styles.weightCell]}>
+          <Text style={styles.weightText}>
+            {item.weight ? `${item.weight} kg` : "-"}
+          </Text>
+        </View> */}
+        {/* <View style={[styles.cell, styles.weightCell]}>
+          <Text style={styles.exerciseText}>
+            {item.exercise ? `${item.exercise} kcal` : "-"}
+          </Text>
+        </View> */}
       </TouchableOpacity>
     );
   };
@@ -275,6 +435,9 @@ const styles = StyleSheet.create({
 
   dateCell: { flex: 0.9, alignItems: "flex-start" },
   mealCell: { flex: 1 },
+  weightCell: { flex: 0.6, alignItems: "center", justifyContent: "center" },
+  weightText: { color: "#FF7FA0", fontWeight: "700", fontSize: 13 },
+  exerciseText: { color: "#4CAF50", fontWeight: "700", fontSize: 13 },
   dataRow: { backgroundColor: "#FFF", borderRadius: 10 },
 
   dateText: { color: "#333", fontWeight: "600" },
@@ -330,5 +493,54 @@ const styles = StyleSheet.create({
     color: "#FF7FA0",
     fontWeight: "600",
   },
-  
+
+  // 사진 보기 모드 스타일
+  photoCell: {
+    flex: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoGridInWeekly: {
+    flexDirection: "row",
+    gap: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  photoThumbnail: {
+    width: 50,
+    height: 50,
+    borderRadius: 6,
+    backgroundColor: "#f0f0f0",
+  },
+  morePhotosOverlay: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  morePhotosText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
+  // 칼로리+몸무게 모드 스타일
+  calorieInfoCell: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calorieText: {
+    color: "#FF7FA0",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  netBurnText: {
+    fontWeight: "700",
+    fontSize: 14,
+  },
 });

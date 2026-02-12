@@ -30,12 +30,13 @@ export default function MonthlyScreen() {
   const router = useRouter();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [cells, setCells] = useState<
-    { empty?: boolean; date?: string; total?: number; sub?: number }[]
+    { empty?: boolean; date?: string; total?: number; sub?: number; weight?: number; exercise?: number }[]
   >([]);
   const [settings, setSettings] = useState<any>(null);
 
   const [showTooltip, setShowTooltip] = useState(false);
   const [subKcal, setSubKcal] = useState<number>(0);
+  const [totalIntakeFromStart, setTotalIntakeFromStart] = useState<number>(0);
   
   const displaysubKcal = subKcal < 0 ? `${subKcal}` : `+${subKcal}`;
 
@@ -59,7 +60,7 @@ export default function MonthlyScreen() {
     async (base: Date) => {
       if (!settings) return;
 
-      const { bmr, exercise, goalBurn } = settings;
+      const { bmr, exercise, goalBurn, startDate } = settings;
 
       const year = base.getFullYear();
       const month = base.getMonth();
@@ -69,8 +70,12 @@ export default function MonthlyScreen() {
 
       const startPad = (first.getDay() + 6) % 7;
 
-      let arr: { empty?: boolean; date?: string; total?: number; sub?: number }[] = [];
+      let arr: { empty?: boolean; date?: string; total?: number; sub?: number; weight?: number; exercise?: number }[] = [];
       let totalSub = 0;
+      let totalIntake = 0;
+
+      // 다이어트 시작일 설정
+      const dietStart = startDate ? new Date(startDate) : null;
 
       for (let i = 0; i < startPad; i++) arr.push({ empty: true });
 
@@ -88,18 +93,39 @@ export default function MonthlyScreen() {
             .reduce((s: number, m: any) => s + (m.kcal || 0), 0);
         }
 
-        // ✔ 실제 소모량(todaySub) = goalBurn - total
-        const todaySub = total - (bmr + exercise);
+        const weightRaw = await AsyncStorage.getItem(`weight-${key}`);
+        let weight = 0;
+        if (weightRaw) {
+          weight = JSON.parse(weightRaw);
+        }
 
-        if (total > 0) totalSub += todaySub;
+        const exerciseRaw = await AsyncStorage.getItem(`exercise-${key}`);
+        let dailyExercise = 0;
+        if (exerciseRaw) {
+          dailyExercise = JSON.parse(exerciseRaw);
+        }
 
-        arr.push({ date: key, total, sub: todaySub });
+        // ✔ 실제 소모량(todaySub) = total - (bmr + exercise + dailyExercise)
+        const todaySub = total - (bmr + exercise + dailyExercise);
+
+        // 다이어트 시작일 이후의 데이터만 누적 계산
+        if (dietStart && d >= dietStart) {
+          totalIntake += total;
+          if (total > 0) totalSub += todaySub;
+        } else if (!dietStart && total > 0) {
+          // 시작일이 설정되지 않았으면 모든 데이터 포함
+          totalIntake += total;
+          totalSub += todaySub;
+        }
+
+        arr.push({ date: key, total, sub: todaySub, weight, exercise: dailyExercise });
       }
 
       while (arr.length % 7 !== 0) arr.push({ empty: true });
 
       setCells(arr);
       setSubKcal(totalSub);
+      setTotalIntakeFromStart(totalIntake);
     },
     [settings]
   );
@@ -131,9 +157,9 @@ export default function MonthlyScreen() {
   const estWeight = (startWeight - lostKg).toFixed(1);
 
   const remainMidDays =
-    dailyGoalSub > 0
-      ? Math.ceil((1 * kcalPerKg) / dailyGoalSub)
-      : null;
+    subKcal > -7700
+      ? Math.ceil((7700 + subKcal) / dailyGoalSub)
+      : Math.ceil((7700 + (subKcal+7700)) / dailyGoalSub);
 
   const remainGoalDays =
     dailyGoalSub > 0
@@ -194,10 +220,23 @@ export default function MonthlyScreen() {
           // ✅ undefined 대비해서 기본값 깔기
           const total = c.total ?? 0;
           const sub = c.sub ?? 0;
+          const weight = c.weight ?? 0;
+          const exercise = c.exercise ?? 0;
           const hasRecord = total > 0;
 
           const displaySub = sub < 0 ? `${sub}` : `+${sub}`;
 
+          // 시작일로부터 며칠째인지 계산
+          let daysSinceStart = null;
+          if (settings?.startDate && c.date) {
+            const start = new Date(settings.startDate);
+            const current = new Date(c.date);
+            const diffTime = current.getTime() - start.getTime();
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays >= 0) {
+              daysSinceStart = diffDays + 1; // D+1부터 시작
+            }
+          }
 
           // 총 섭취량 없으면 흰색
           const bg =
@@ -220,6 +259,13 @@ export default function MonthlyScreen() {
                 {new Date(c.date!).getDate()}
               </Text>
 
+              {/* 시작일로부터 며칠째 */}
+              {daysSinceStart !== null && (
+                <Text style={[styles.dDay, { color: "#FF6B6B" }]}>
+                  D+{daysSinceStart}
+                </Text>
+              )}
+
               {/* 총 섭취 */}
               {hasRecord && (
                 <Text style={[styles.kcal, { color: textColor }]}>
@@ -228,7 +274,7 @@ export default function MonthlyScreen() {
               )}
 
               {/* 그날 소모량 */}
-              {hasRecord && (
+              {/* {hasRecord && (
                 <Text
                   style={[styles.kcal, { color: "#7C4DFF" }]}
                   numberOfLines={1}
@@ -236,7 +282,29 @@ export default function MonthlyScreen() {
                 >
                   {displaySub} kcal
                 </Text>
+              )} */}
+
+              {/* 몸무게 */}
+              {weight > 0 && (
+                <Text
+                  style={[styles.kcal, { color: "#4CAF50" }]}
+                  numberOfLines={1}
+                  ellipsizeMode="clip"
+                >
+                  {weight} kg
+                </Text>
               )}
+
+              {/* 운동칼로리 */}
+              {/* {exercise > 0 && (
+                <Text
+                  style={[styles.kcal, { color: "#FF9800" }]}
+                  numberOfLines={1}
+                  ellipsizeMode="clip"
+                >
+                  🏃 {exercise}
+                </Text>
+              )} */}
 
             </TouchableOpacity>
           );
@@ -247,10 +315,15 @@ export default function MonthlyScreen() {
       {/* REPORT BOX (원래 있던 기능 그대로 유지) */}
       <View style={styles.reportBox}>
         <View style={styles.reportHeaderRow}>
-          <Text style={styles.reportHeader}>📊 월간 리포트</Text>
+          <Text style={styles.reportHeader}>📊 {settings?.startDate ? "다이어트 시작일부터" : "월간"} 리포트</Text>
           <Pressable onPress={() => setShowTooltip(true)}>
             <Text style={styles.infoIcon}>ⓘ</Text>
           </Pressable>
+        </View>
+
+        <View style={styles.reportItem}>
+          <Text style={styles.reportLabel}>총 섭취 칼로리</Text>
+          <Text style={styles.reportValue}>{totalIntakeFromStart} kcal</Text>
         </View>
 
         <View style={styles.reportItem}>
@@ -291,7 +364,9 @@ export default function MonthlyScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.tooltipBox}>
               <Text style={styles.tooltipTitle}>📊 Report 설명</Text>
-              <Text style={styles.tooltipText}>• 총 소모 칼로리: 한 달간 실제 소비량 합계</Text>
+              <Text style={styles.tooltipText}>
+                • 총 섭취/소모 칼로리: {settings?.startDate ? "다이어트 시작일부터 현재까지" : "이번 달"} 누적 합계
+              </Text>
               <Text style={styles.tooltipText}>• 예상 몸무게: 소비량 기반 자동 추정</Text>
               <Text style={styles.tooltipText}>• D-day: 목표까지 남은 예상 일수</Text>
               <Text style={styles.tooltipText}>⚖️ 1kg = 약 7,700kcal</Text>
@@ -326,6 +401,7 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   day: { fontWeight: "700", fontSize: 14 },
+  dDay: { fontSize: 8, fontWeight: "700", marginTop: 1 },
   kcal: { fontSize: 10, fontWeight: "700", marginTop: 2 },
 
   // Report Box
