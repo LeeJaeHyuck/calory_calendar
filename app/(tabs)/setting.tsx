@@ -205,15 +205,54 @@ export default function SettingsScreen() {
     );
   };
 
+  const renderFieldDate = (
+    label: string,
+    value: string,
+    setter: (text: string) => void,
+    unit: string,
+    placeholder: string,
+    keyboardType: "numeric" | "default" = "numeric"
+  ) => {
+    return (
+      <View style={styles.row}>
+        <Text style={styles.label}>{label}</Text>
+
+        {isEditing ? (
+          <TextInput
+            style={styles.input}
+            keyboardType={keyboardType}
+            value={value || ""}
+            onChangeText={(text) => {
+                let change = text;
+                if (text.length > 3) {
+                  change = text + "-"
+                }
+                if (text.length > 6) {
+                  change = text + "-"
+                }
+                setter(change || "")
+              }
+            }
+            placeholder={placeholder}
+          />
+        ) : (
+          <Text style={styles.viewText}>{value ? `${value}` : "-"}</Text>
+        )}
+
+        {!isEditing && <Text style={styles.unit}>{unit}</Text>}
+      </View>
+    );
+  };
+
   const renderFieldCalendar = (
-  label: string,
-  value: string,
-  setter: (text: string) => void,
-  unit: string,
-  placeholder: string,
-  keyboardType: "numeric" | "default" = "numeric",
-  type: "text" | "date" = "text"
-) => {
+    label: string,
+    value: string,
+    setter: (text: string) => void,
+    unit: string,
+    placeholder: string,
+    keyboardType: "numeric" | "default" = "numeric",
+    type: "text" | "date" = "text"
+  ) => {
   const [show, setShow] = useState(false);
 
   const formatDate = (date: Date) => {
@@ -414,15 +453,15 @@ export default function SettingsScreen() {
             {/* 기본 정보 */}
             <View style={styles.box}>
               <Text style={styles.sectionTitle}>기본 정보</Text>
-              {/* {renderField(
+              {renderFieldDate(
                 "다이어트 시작일 :",
                 startDate,
                 setStartDate,
                 "",
                 "예: 2024-01-01",
                 "default"
-              )} */}
-              {renderFieldCalendar(
+              )}
+              {/* {renderFieldCalendar(
                 "다이어트 시작일 :",
                 startDate,
                 setStartDate,
@@ -430,7 +469,7 @@ export default function SettingsScreen() {
                 "날짜 선택",
                 "default",
                 "date"   // 👈 여기 추가
-              )}
+              )} */}
               {renderGenderPicker()}
               {renderField("나이 :", age, setAge, " 세", "예: 25")}
               {renderField("키 :", height, setHeight, " cm", "예: 170")}
