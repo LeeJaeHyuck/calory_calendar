@@ -1,14 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   FlatList,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -55,6 +55,7 @@ export default function WeeklyScreen() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [viewMode, setViewMode] = useState<"all" | "photos" | "calories">("all");
   const [bmr, setBmr] = useState(0);
+  const [goalBurn, setGoalBurn] = useState(0);
   const router = useRouter();
 
   const safeMeal = (maybeArr: any): MealInfo => {
@@ -73,13 +74,14 @@ export default function WeeklyScreen() {
   };
 
   const loadWeeklyData = useCallback(async () => {
-    // 설정에서 뷰 모드 및 BMR 불러오기
+    // 설정에서 뷰 모드 및 BMR, goalBurn 불러오기
     try {
       const settings = await AsyncStorage.getItem("user-settings");
       if (settings) {
         const parsed = JSON.parse(settings);
         setViewMode(parsed.weeklyViewMode || "all");
         setBmr(parsed.bmr || 0);
+        setGoalBurn(parsed.goalBurn || 0);
       }
     } catch (e) {
       console.error("Failed to load view mode:", e);
@@ -164,24 +166,24 @@ export default function WeeklyScreen() {
   const mm = String(refDate.getMonth() + 1).padStart(2, "0");
   const headerTitle = `🍰 ${yy}년 ${mm}월 ${weekOfMonth}주차`;
 
-  const renderMealBox = (meal: MealInfo) => (
+  const renderMealBox = (meal: MealInfo, isPastDate: boolean) => (
     <View style={styles.mealBox}>
       {/* 전체 합계 */}
-      <Text style={styles.mealTotal}>
+      <Text style={[styles.mealTotal, isPastDate && { color: "#B0B0B0" }]}>
         {meal.total ? `${meal.total} kcal` : "-"}
       </Text>
-  
+
       {meal.items.length > 0 && <View style={styles.divider} />}
-  
+
       {/* 메뉴 & 칼로리 세로 구조 */}
       {meal.items.length > 0 ? (
         meal.items.map((f, i) => (
           <View key={i} style={styles.mealItemGroup}>
-            <Text style={styles.mealItemName}>{f.name || "(이름없음)"}</Text>
+            <Text style={[styles.mealItemName, isPastDate && { color: "#999" }]}>{f.name || "(이름없음)"}</Text>
           </View>
         ))
       ) : (
-        <Text style={styles.mealItemEmpty}>기록 없음</Text>
+        <Text style={[styles.mealItemEmpty, isPastDate && { color: "#CCC" }]}>기록 없음</Text>
       )}
     </View>
   );
@@ -250,6 +252,13 @@ export default function WeeklyScreen() {
       d.getDate()
     ).padStart(2, "0")} (${dayName})`;
 
+    // 지난 날짜 확인
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const itemDate = new Date(item.date);
+    itemDate.setHours(0, 0, 0, 0);
+    const isPastDate = itemDate < today;
+
     // 사진만 보기 모드
     if (viewMode === "photos") {
       return (
@@ -287,35 +296,35 @@ export default function WeeklyScreen() {
     }
 
     // 칼로리+몸무게 모드
-    if (viewMode === "calories") {
-      // 순소모 = BMR - 섭취 + 운동
-      const netBurn = bmr - item.total + item.exercise;
-      const netBurnColor = netBurn >= 0 ? "#4CAF50" : "#FF6B6B";
+    // if (viewMode === "calories") {
+    //   // 순소모 = BMR - 섭취 + 운동
+    //   const netBurn = bmr - item.total + item.exercise;
+    //   const netBurnColor = netBurn >= 0 ? "#4CAF50" : "#FF6B6B";
 
-      return (
-        <TouchableOpacity
-          onPress={() => router.push(`/(tabs)/daily?date=${item.date}`)}
-          style={[styles.row, styles.dataRow]}
-          activeOpacity={0.85}
-        >
-          <View style={[styles.cell, styles.dateCell]}>
-            <Text style={styles.dateText}>{label}</Text>
-          </View>
+    //   return (
+    //     <TouchableOpacity
+    //       onPress={() => router.push(`/(tabs)/daily?date=${item.date}`)}
+    //       style={[styles.row, styles.dataRow]}
+    //       activeOpacity={0.85}
+    //     >
+    //       <View style={[styles.cell, styles.dateCell]}>
+    //         <Text style={styles.dateText}>{label}</Text>
+    //       </View>
 
-          <View style={[styles.cell, styles.calorieInfoCell]}>
-            <Text style={[styles.netBurnText, { color: netBurnColor }]}>
-              {netBurn ? `${netBurn > 0 ? '+' : ''}${netBurn} kcal` : "-"}
-            </Text>
-          </View>
+    //       <View style={[styles.cell, styles.calorieInfoCell]}>
+    //         <Text style={[styles.netBurnText, { color: netBurnColor }]}>
+    //           {netBurn ? `${netBurn > 0 ? '+' : ''}${netBurn} kcal` : "-"}
+    //         </Text>
+    //       </View>
 
-          <View style={[styles.cell, styles.calorieInfoCell]}>
-            <Text style={styles.weightText}>
-              {item.weight ? `${item.weight} kg` : "-"}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      );
-    }
+    //       <View style={[styles.cell, styles.calorieInfoCell]}>
+    //         <Text style={styles.weightText}>
+    //           {item.weight ? `${item.weight} kg` : "-"}
+    //         </Text>
+    //       </View>
+    //     </TouchableOpacity>
+    //   );
+    // }
 
     // 전체 보기 모드 (기본)
     return (
@@ -325,34 +334,29 @@ export default function WeeklyScreen() {
         activeOpacity={0.85}
       >
         <View style={[styles.cell, styles.dateCell]}>
-          <Text style={styles.dateText}>{label}</Text>
-          <Text style={styles.totalUnderDate}>
+          <View style={styles.dateHeader}>
+            <Text style={[styles.dateText, isPastDate && { color: "#999" }]}>{label}</Text>
+            {item.exercise >= goalBurn && goalBurn > 0 && (
+              <Text style={styles.successIcon}>✨</Text>
+            )}
+          </View>
+          <Text style={[styles.totalUnderDate, isPastDate && { color: "#B0B0B0" }]}>
             {item.total ? `${item.total} kcal` : "-"}
           </Text>
-          <Text style={styles.exerciseText}>
+          <Text style={[styles.exerciseText, isPastDate && { color: "#90C090" }]}>
             {item.weight ? `${item.weight} kg` : "-"}
           </Text>
         </View>
 
         <View style={[styles.cell, styles.mealCell]}>
-          {renderMealBox(item.breakfast)}
+          {renderMealBox(item.breakfast, isPastDate)}
         </View>
         <View style={[styles.cell, styles.mealCell]}>
-          {renderMealBox(item.lunch)}
+          {renderMealBox(item.lunch, isPastDate)}
         </View>
         <View style={[styles.cell, styles.mealCell]}>
-          {renderMealBox(item.dinner)}
+          {renderMealBox(item.dinner, isPastDate)}
         </View>
-        {/* <View style={[styles.cell, styles.weightCell]}>
-          <Text style={styles.weightText}>
-            {item.weight ? `${item.weight} kg` : "-"}
-          </Text>
-        </View> */}
-        {/* <View style={[styles.cell, styles.weightCell]}>
-          <Text style={styles.exerciseText}>
-            {item.exercise ? `${item.exercise} kcal` : "-"}
-          </Text>
-        </View> */}
       </TouchableOpacity>
     );
   };
@@ -440,7 +444,9 @@ const styles = StyleSheet.create({
   exerciseText: { color: "#4CAF50", fontWeight: "700", fontSize: 13 },
   dataRow: { backgroundColor: "#FFF", borderRadius: 10 },
 
+  dateHeader: { flexDirection: "row", alignItems: "center", gap: 4 },
   dateText: { color: "#333", fontWeight: "600" },
+  successIcon: { fontSize: 14, marginLeft: 2 },
   totalUnderDate: { color: "#FF7FA0", fontWeight: "700", fontSize: 13, marginTop: 2 },
 
   mealBox: {

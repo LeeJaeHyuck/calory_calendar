@@ -1,25 +1,28 @@
+import exercisesData from "@/assets/datas/exercises.json";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   AppState,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
-  View,
-  Image,
-  Keyboard,
+  View
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { checkAndAwardBadges, countBadges } from "../../utils/badgeUtils";
+import { scheduleMealNotifications } from "../../utils/notificationUtils";
 
 interface Meal {
   name: string;
@@ -147,12 +150,15 @@ export default function DailyScreen() {
   const [weight, setWeight] = useState<number>(0);
   const [weightStr, setWeightStr] = useState<string>('');
   const [dailyExercise, setDailyExercise] = useState<number>(0);
+  const [dailyExerciseNm, setDailyExerciseNm] = useState<string>('');
   const [isSaved, setIsSaved] = useState(false);
   const [showTooltip, setShowTooltip] = useState<null | "intake" | "burn">(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [foodHistory, setFoodHistory] = useState<Meal[]>([]);
   const [activeSuggestion, setActiveSuggestion] = useState<{ type: keyof Meals; index: number } | null>(null);
   const [filteredSuggestions, setFilteredSuggestions] = useState<Meal[]>([]);
+  const [showExerciseRecommendation, setShowExerciseRecommendation] = useState(false);
+  const [diary, setDiary] = useState<string>("");
 
   // setTimeout cleanup을 위한 ref
   const autocompleteTimeoutRef = useRef<NodeJS.Timeout>();
@@ -169,8 +175,6 @@ export default function DailyScreen() {
   useEffect(() => {
     if (weightStr !== undefined && weightStr.length > 0) {
       setWeight(parseFloat(weightStr))
-    } else {
-      setWeight(0)
     }
   }, [weightStr]);
 
@@ -241,6 +245,18 @@ export default function DailyScreen() {
           }
         } else {
           setPhotos([]);
+        }
+
+        const savedDiary = await AsyncStorage.getItem(`diary-${date}`);
+        if (savedDiary) {
+          try {
+            setDiary(JSON.parse(savedDiary));
+          } catch (e) {
+            console.error("Failed to parse diary:", e);
+            setDiary("");
+          }
+        } else {
+          setDiary("");
         }
 
         setIsSaved(false);
@@ -406,6 +422,38 @@ export default function DailyScreen() {
   // 실제 소모량 = BMR + 설정 운동칼로리 + 당일 운동칼로리 - 섭취량
   const subKcal = bmr + dailyExercise - total;
 
+  // 목표 달성을 위해 더 소모해야 하는 칼로리
+  const diff = goalBurn - subKcal;
+
+  // diff 값에 기반한 운동 추천
+  const getRecommendedExercises = () => {
+    if (diff <= 0) {
+      return [];
+    }
+
+    // diff 값과 가까운 운동들을 찾기 (±100 kcal 범위)
+    const tolerance = 100;
+    const recommended = exercisesData.exercises
+      .filter(exercise =>
+        Math.abs(exercise.calories - diff) <= tolerance
+      )
+      .sort((a, b) =>
+        Math.abs(a.calories - diff) - Math.abs(b.calories - diff)
+      )
+      .slice(0, 5); // 상위 5개만 표시
+
+    // 가까운 운동이 없으면 전체 목록에서 선택
+    if (recommended.length === 0) {
+      return exercisesData.exercises
+        .sort((a, b) =>
+          Math.abs(a.calories - diff) - Math.abs(b.calories - diff)
+        )
+        .slice(0, 5);
+    }
+
+    return recommended;
+  };
+
   // 사진 선택 (여러 장)
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -452,11 +500,20 @@ export default function DailyScreen() {
     await AsyncStorage.setItem(`weight-${date}`, JSON.stringify(weight));
     await AsyncStorage.setItem(`exercise-${date}`, JSON.stringify(dailyExercise));
     await AsyncStorage.setItem(`photos-${date}`, JSON.stringify(photos));
+    await AsyncStorage.setItem(`diary-${date}`, JSON.stringify(diary));
 
     // 식단 기록 업데이트
     await loadFoodHistory();
 
+    // 뱃지 체크 및 수여/회수
+    await checkAndAwardBadges();
+
+    // 식단 알림 스케줄링 (오늘 날짜인 경우만)
+    await scheduleMealNotifications(date, meals.Breakfast, meals.Lunch, meals.Dinner);
+
     setIsSaved(true);
+    // 뱃지 개수 업데이트 (체크는 하지 않음)
+    const count = await countBadges();
 
     // 한끼당 제한 칼로리 체크
     if (mealLimit > 0) {
@@ -472,17 +529,18 @@ export default function DailyScreen() {
       if (overMeals.length > 0) {
         Alert.alert(
           "⚠️ 한끼 칼로리 초과",
-          `${overMeals.join(", ")}이(가) 한끼 제한(${mealLimit} kcal)을 초과했습니다!`
+          `${overMeals.join(", ")}이(가) 한끼 제한(${mealLimit} kcal)을 초과했습니다.`
         );
+        return;
       }
     }
 
     // 목표 달성 여부 계산
     if (subKcal >= goalBurn) {
-      Alert.alert("참 잘했어요! 🎉", "목표를 달성했습니다!");
+      Alert.alert("목표를 달성하여 뱃지를 받았어요 🎉", `지금까지 ${count} 개의 뱃지를 모았어요!`);
     } else {
       const diff = goalBurn - subKcal;
-      Alert.alert("조금만 더 힘내세요! 💪", `목표까지 ${diff} kcal 남았어요!`);
+      Alert.alert("조금만 더 힘내세요! 💪", `자정 전까지 ${diff} kcal를 소모하면 뱃지를 얻을 수 있어요!`);
     }
   };
 
@@ -503,7 +561,7 @@ export default function DailyScreen() {
 
     Alert.alert(
       "오늘의 식단 추천",
-      "입력하신 오늘의 식단이 모두 초기화됩니다. 계속하시겠습니까?",
+      "기록된 음식 기반으로 목표 칼로리에 맞게 식단이 생성됩니다. 계속하시겠습니까?",
       [
         { text: "취소", style: "cancel" },
         {
@@ -577,30 +635,38 @@ export default function DailyScreen() {
     <View style={styles.mealSection}>
       <View style={styles.mealHeader}>
         <Text style={styles.mealTitle}>몸무게</Text>
-        <Text style={styles.mealTotal}>
+        {/* <Text style={styles.mealTotal}>
           {weight ? `${weight} kg` : ""}
-        </Text>
+        </Text> */}
       </View>
 
       <View style={styles.foodRow}>
-        <TextInput
-          style={[styles.foodInput, { flex: 1 }]}
-          placeholder="몸무게 (kg)"
-          keyboardType="decimal-pad"
-          returnKeyType="done"
-          blurOnSubmit
-          onSubmitEditing={() => Keyboard.dismiss()}
-          value={weightStr ? String(weightStr) : ""}
-          onChangeText={(v) => {
-            // 숫자 + 소수점 1개만 허용
-            const filtered = v.replace(/[^0-9.]/g, "");
-            const parts = filtered.split(".");
-            if (parts.length > 3) return; // 소수점 2개 이상 방지
-
-            setWeightStr(filtered);
-            setIsSaved(false);
-          }}
-        />
+        <View style={{ flex: 2, marginRight: 6 }}>
+          <TextInput
+            style={[styles.foodInput, { flex: 1 }]}
+            // placeholder="몸무게 (kg)"
+            keyboardType="numeric"  //"decimal-pad"
+            // returnKeyType="done"
+            // onSubmitEditing={() => Keyboard.dismiss()}
+            value={weightStr ? String(weightStr) : ""}
+            onChangeText={(v) => {
+              const filtered = v.replace(/[^0-9.]/g, "");
+              const parts = filtered.split(".");
+              if (parts.length > 3) return; // 소수점 2개 이상 방지
+              setWeightStr(filtered);
+              setIsSaved(false);
+            }}
+          />
+        </View>
+         <Text style={styles.mealTotal}>
+          kg
+        </Text>
+        {/* <TextInput
+          style={styles.kcalInput}
+          value={"kg"}
+          editable={false}
+          selectTextOnFocus={false}
+        /> */}
       </View>
     </View>
   );
@@ -608,20 +674,36 @@ export default function DailyScreen() {
   const renderExerciseSection = () => (
     <View style={styles.mealSection}>
       <View style={styles.mealHeader}>
-        <Text style={styles.mealTitle}>운동칼로리</Text>
-        <Text style={styles.mealTotal}>
-          {dailyExercise ? `${dailyExercise} kcal` : ""}
-        </Text>
+        <Text style={styles.mealTitle}>운동 칼로리</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => setShowExerciseRecommendation(true)}
+            style={styles.exerciseRecommendButton}
+          >
+            <Text style={styles.exerciseRecommendText}>🏃 운동 추천</Text>
+          </TouchableOpacity>
+          <Text style={styles.mealTotal}>
+            {dailyExercise ? `${dailyExercise} kcal` : ""}
+          </Text>
+        </View>
       </View>
 
       <View style={styles.foodRow}>
+        <View style={{ flex: 2, marginRight: 6 }}>
+          <TextInput
+            style={[styles.foodInput, { flex: 1 }]}
+            placeholder="운동 이름"
+            // onSubmitEditing={() => Keyboard.dismiss()}
+            value={dailyExerciseNm ? String(dailyExerciseNm) : ""}
+            onChangeText={(v) => {
+              setDailyExerciseNm(v);
+            }}
+          />
+        </View>
         <TextInput
-          style={[styles.foodInput, { flex: 1 }]}
-          placeholder="운동칼로리 (kcal)"
-          keyboardType="number-pad"
-          returnKeyType="done"
-          blurOnSubmit
-          onSubmitEditing={() => Keyboard.dismiss()}
+          style={styles.kcalInput}
+          placeholder="kcal"
+          keyboardType="numeric"
           value={dailyExercise ? String(dailyExercise) : ""}
           onChangeText={(v) => {
             setDailyExercise(parseInt(v) || 0);
@@ -660,6 +742,28 @@ export default function DailyScreen() {
       ) : (
         <Text style={styles.noPhotoText}>등록된 사진이 없습니다</Text>
       )}
+    </View>
+  );
+
+  const renderDiarySection = () => (
+    <View style={styles.mealSection}>
+      <View style={styles.mealHeader}>
+        <Text style={styles.mealTitle}>일기</Text>
+        <Text style={styles.noPhotoText}>계획한 식단을 잘 지켰는지, 목표만큼 소모했는지 기록해 주세요.</Text>
+      </View>
+      <TextInput
+        style={styles.diaryInput}
+        // placeholder="계획한 식단을 잘 지켰는지, 목표만큼 소모했는지 기록해 주세요."
+        // placeholderTextColor="#999"
+        multiline
+        numberOfLines={6}
+        textAlignVertical="top"
+        value={diary}
+        onChangeText={(text) => {
+          setDiary(text);
+          setIsSaved(false);
+        }}
+      />
     </View>
   );
 
@@ -741,11 +845,11 @@ export default function DailyScreen() {
                     if (autocompleteTimeoutRef.current) {
                       clearTimeout(autocompleteTimeoutRef.current);
                     }
-                    // 새로운 timeout 설정
+                    // 새로운 timeout 설정 (더 길게 변경하여 클릭할 시간 확보)
                     autocompleteTimeoutRef.current = setTimeout(() => {
                       setFilteredSuggestions([]);
                       setActiveSuggestion(null);
-                    }, 200);
+                    }, 300);
                   }}
                 />
                 {activeSuggestion?.type === type &&
@@ -753,14 +857,20 @@ export default function DailyScreen() {
                   filteredSuggestions.length > 0 && (
                     <View style={styles.autocompleteContainer}>
                       {filteredSuggestions.slice(0, 5).map((food, idx) => (
-                        <TouchableOpacity
+                        <Pressable
                           key={idx}
                           style={styles.autocompleteItem}
-                          onPress={() => selectSuggestion(type, i, food)}
+                          onPress={() => {
+                            // timeout 취소하여 자동완성이 사라지지 않도록
+                            if (autocompleteTimeoutRef.current) {
+                              clearTimeout(autocompleteTimeoutRef.current);
+                            }
+                            selectSuggestion(type, i, food);
+                          }}
                         >
                           <Text style={styles.autocompleteName}>{food.name}</Text>
                           <Text style={styles.autocompleteKcal}>{food.kcal} kcal</Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       ))}
                     </View>
                   )}
@@ -799,7 +909,12 @@ export default function DailyScreen() {
           <TouchableOpacity onPress={() => changeDay(-1)}>
             <Text style={styles.navBtn}>◀</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>🍓 {formatKoreanDate(new Date(date))}</Text>
+          <Text style={[
+            styles.title,
+            new Date(date) < new Date(formatDate(new Date())) && { color: "#C0C0C0" }
+          ]}>
+            🍓 {formatKoreanDate(new Date(date))}
+          </Text>
 
           <TouchableOpacity onPress={() => changeDay(1)}>
             <Text style={styles.navBtn}>▶</Text>
@@ -830,6 +945,9 @@ export default function DailyScreen() {
 
               {/* 사진 */}
               {renderPhotoSection()}
+
+              {/* 일기 */}
+              {renderDiarySection()}
             </>
           }
         /> 
@@ -877,7 +995,7 @@ export default function DailyScreen() {
               </Pressable>
             </View>
 
-            {startDate && (
+            {startDate && new Date(date) <= new Date() && (
               <>
                 {/* <View style={styles.infoRow}>
                   <Text style={[styles.total, { color: "#9C27B0" }]}>
@@ -917,6 +1035,61 @@ export default function DailyScreen() {
               )}
             </View>
           </TouchableWithoutFeedback>
+        </Modal>
+
+        {/* 운동 추천 모달 */}
+        <Modal
+          transparent
+          visible={showExerciseRecommendation}
+          animationType="slide"
+          onRequestClose={() => setShowExerciseRecommendation(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.exerciseModalBox}>
+              <View style={styles.exerciseModalHeader}>
+                <Text style={styles.exerciseModalTitle}>🏃 오늘의 운동 추천</Text>
+                <TouchableOpacity onPress={() => setShowExerciseRecommendation(false)}>
+                  <Text style={styles.exerciseModalClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              {diff > 0 ? (
+                <>
+                  <Text style={styles.exerciseModalSubtitle}>
+                    목표 달성까지 {diff} kcal 더 소모하세요!
+                  </Text>
+
+                  <ScrollView style={styles.exerciseList}>
+                    {getRecommendedExercises().map((exercise, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={styles.exerciseItem}
+                        onPress={() => {
+                          setDailyExerciseNm(exercise.name);
+                          setDailyExercise(exercise.calories);
+                          setShowExerciseRecommendation(false);
+                          setIsSaved(false);
+                        }}
+                      >
+                        <View style={styles.exerciseItemHeader}>
+                          <Text style={styles.exerciseName}>{exercise.name}</Text>
+                          <Text style={styles.exerciseCalories}>{exercise.calories} kcal</Text>
+                        </View>
+                        <Text style={styles.exerciseDuration}>⏱️ {exercise.duration}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              ) : (
+                <View style={styles.exerciseSuccessBox}>
+                  <Text style={styles.exerciseSuccessText}>🎉</Text>
+                  <Text style={styles.exerciseSuccessMessage}>
+                    이미 목표를 달성했습니다!
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
         </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -1145,5 +1318,104 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     paddingVertical: 10,
+  },
+  exerciseRecommendButton: {
+    backgroundColor: pink,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  exerciseRecommendText: {
+    color: "#FF6295",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  exerciseModalBox: {
+    backgroundColor: "#FFF",
+    borderRadius: 20,
+    padding: 20,
+    width: "90%",
+    maxHeight: "80%",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+  },
+  exerciseModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  exerciseModalTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#FF7FA0",
+  },
+  exerciseModalClose: {
+    fontSize: 28,
+    color: "#999",
+    fontWeight: "300",
+  },
+  exerciseModalSubtitle: {
+    fontSize: 16,
+    color: "#666",
+    marginBottom: 20,
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  exerciseList: {
+    maxHeight: 400,
+  },
+  exerciseItem: {
+    backgroundColor: "#FFF5F8",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#FFD6E0",
+  },
+  exerciseItemHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  exerciseName: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FF7FA0",
+  },
+  exerciseCalories: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FF4F84",
+  },
+  exerciseDuration: {
+    fontSize: 14,
+    color: "#999",
+  },
+  exerciseSuccessBox: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  exerciseSuccessText: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  exerciseSuccessMessage: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#4CAF50",
+  },
+  diaryInput: {
+    borderWidth: 1,
+    borderColor: "#FFD6E0",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 120,
+    fontSize: 15,
+    color: "#333",
+    backgroundColor: "#FFF",
   },
 });

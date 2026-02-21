@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Dimensions,
   Modal,
@@ -12,8 +12,9 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { checkBadgeForDate } from "../../utils/badgeUtils";
 
-const KR_WEEK = ["월", "화", "수", "목", "금", "토", "일"];
+const KR_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 const { width } = Dimensions.get("window");
 const GAP = 2;
 const CELL_SIZE = Math.floor((width - 20 - GAP * 6) / 7);
@@ -30,13 +31,15 @@ export default function MonthlyScreen() {
   const router = useRouter();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [cells, setCells] = useState<
-    { empty?: boolean; date?: string; total?: number; sub?: number; weight?: number; exercise?: number }[]
+    { empty?: boolean; date?: string; total?: number; sub?: number; weight?: number; exercise?: number; hasBadge?: boolean }[]
   >([]);
   const [settings, setSettings] = useState<any>(null);
 
   const [showTooltip, setShowTooltip] = useState(false);
   const [subKcal, setSubKcal] = useState<number>(0);
   const [totalIntakeFromStart, setTotalIntakeFromStart] = useState<number>(0);
+  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
+  const [showGoalModal, setShowGoalModal] = useState(false);
   
   const displaysubKcal = subKcal < 0 ? `${subKcal}` : `+${subKcal}`;
 
@@ -61,7 +64,8 @@ export default function MonthlyScreen() {
       if (!settings) return;
 
       const { bmr, exercise, goalBurn, startDate } = settings;
-
+      const normalize = (date: Date) =>
+      new Date(date.getFullYear(), date.getMonth(), date.getDate());
       const year = base.getFullYear();
       const month = base.getMonth();
 
@@ -70,18 +74,25 @@ export default function MonthlyScreen() {
 
       const startPad = (first.getDay() + 6) % 7;
 
-      let arr: { empty?: boolean; date?: string; total?: number; sub?: number; weight?: number; exercise?: number }[] = [];
+      let arr: { empty?: boolean; date?: string; total?: number; sub?: number; weight?: number; exercise?: number; hasBadge?: boolean }[] = [];
       let totalSub = 0;
       let totalIntake = 0;
 
       // 다이어트 시작일 설정
       const dietStart = startDate ? new Date(startDate) : null;
+      const nStart = dietStart !== null ? normalize(dietStart) : null;
+
+      // 오늘 날짜 (시간 부분 제거)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const ntoday = normalize(today);
 
       for (let i = 0; i < startPad; i++) arr.push({ empty: true });
 
-      for (let day = 1; day <= last.getDate(); day++) {
+      for (let day = 0; day <= last.getDate(); day++) {
         const d = new Date(year, month, day);
         const key = formatDate(d);
+        const nd = normalize(d);
 
         const raw = await AsyncStorage.getItem(`meals-${key}`);
         let total = 0;
@@ -105,20 +116,27 @@ export default function MonthlyScreen() {
           dailyExercise = JSON.parse(exerciseRaw);
         }
 
-        // ✔ 실제 소모량(todaySub) = total - (bmr + exercise + dailyExercise)
-        const todaySub = total - (bmr + exercise + dailyExercise);
+        // 뱃지 획득 여부 확인
+        const hasBadge = await checkBadgeForDate(key);
 
-        // 다이어트 시작일 이후의 데이터만 누적 계산
-        if (dietStart && d >= dietStart) {
-          totalIntake += total;
-          if (total > 0) totalSub += todaySub;
-        } else if (!dietStart && total > 0) {
-          // 시작일이 설정되지 않았으면 모든 데이터 포함
-          totalIntake += total;
-          totalSub += todaySub;
+        // ✔ 실제 소모량(todaySub) = total - (bmr + exercise + dailyExercise)
+        const todaySub = total - (bmr + dailyExercise);
+        
+        if (nStart === null) {
+          // 시작일이 설정되지 않았으면 오늘까지의 데이터만 포함
+          if (nd <= ntoday && total > 0) {
+            totalIntake += total;
+            totalSub += todaySub;
+          }
+        } else {
+          // 다이어트 시작일부터 오늘 날짜까지만 누적 계산
+          if ((nd <= ntoday && nd >= nStart)) {
+            totalIntake += total;
+            totalSub += todaySub;
+          }
         }
 
-        arr.push({ date: key, total, sub: todaySub, weight, exercise: dailyExercise });
+        arr.push({ date: key, total, sub: todaySub, weight, exercise: dailyExercise, hasBadge });
       }
 
       while (arr.length % 7 !== 0) arr.push({ empty: true });
@@ -144,8 +162,7 @@ export default function MonthlyScreen() {
     }, [settings, currentMonth])
   );
 
-  // 목표 체중 계산 (기존 Monthly 기능 유지)
-  const bmr = settings?.bmr ?? 0;
+ const bmr = settings?.bmr ?? 0;
   const intake = settings?.intake ?? 0;
   const exercise = settings?.exercise ?? 0;
   const startWeight = settings?.weight ?? 0;
@@ -160,6 +177,11 @@ export default function MonthlyScreen() {
     subKcal > -7700
       ? Math.ceil((7700 + subKcal) / dailyGoalSub)
       : Math.ceil((7700 + (subKcal+7700)) / dailyGoalSub);
+
+  const remainMidKcal =
+      subKcal > -7700
+        ? Math.ceil(7700 + subKcal)
+        : Math.ceil(7700 + (subKcal + 7700));
 
   const remainGoalDays =
     dailyGoalSub > 0
@@ -238,30 +260,78 @@ export default function MonthlyScreen() {
             }
           }
 
+          // -1kg 달성일 계산 (오늘 + remainMidDays)
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const milestoneDate = new Date(today);
+          milestoneDate.setDate(milestoneDate.getDate() + remainMidDays);
+
+          // 목표 체중 달성일 계산 (오늘 + remainGoalDays)
+          const goalDate = new Date(today);
+          if (remainGoalDays !== null) {
+            goalDate.setDate(goalDate.getDate() + remainGoalDays);
+          }
+
+          const cellDate = c.date ? new Date(c.date) : null;
+          cellDate?.setHours(0, 0, 0, 0);
+
+          const isMilestone = cellDate &&
+            cellDate.getTime() === milestoneDate.getTime() &&
+            remainMidDays > 0;
+
+          const isGoal = cellDate &&
+            remainGoalDays !== null &&
+            cellDate.getTime() === goalDate.getTime() &&
+            remainGoalDays > 0;
+
           // 총 섭취량 없으면 흰색
           const bg =
             !hasRecord
               ? "#ffffff"
-              : total <= intake
+              : sub <= -dailyGoalSub
               ? "#FF8FBF" // 목표 이하면 성공색
               : "#FFD6E7";
 
           const textColor =
-            hasRecord && total <= intake ? "#ffffff" : "#FF4F84";
+            hasRecord && sub <= -dailyGoalSub ? "#ffffff" : "#FF4F84";
 
           return (
             <TouchableOpacity
               key={i}
               style={[styles.cell, { backgroundColor: bg }]}
-              onPress={() => router.push(`/(tabs)/daily?date=${c.date}`)}
+              onPress={() => {
+                if (isMilestone) {
+                  setShowMilestoneModal(true);
+                } else if (isGoal) {
+                  setShowGoalModal(true);
+                } else {
+                  router.push(`/(tabs)/daily?date=${c.date}`);
+                }
+              }}
             >
-              <Text style={[styles.day, { color: textColor }]}>
-                {new Date(c.date!).getDate()}
-              </Text>
+              <View style={styles.dayRow}>
+                <Text style={[styles.day, { color: textColor }]}>
+                  {new Date(c.date!).getDate()}
+                </Text>
+                {/* 뱃지 획득한 경우 성공 아이콘 */}
+                {c.hasBadge && (
+                  <Text style={styles.successIcon}>✨</Text>
+                )}
+              </View>
+
+              {/* -1kg 달성일 아이콘 */}
+              {isMilestone && (
+                <Text style={styles.milestoneIcon}>🎯</Text>
+              )}
+
+              {/* 목표 체중 달성일 아이콘 */}
+              {isGoal && (
+                <Text style={styles.milestoneIcon}>🏆</Text>
+              )}
 
               {/* 시작일로부터 며칠째 */}
               {daysSinceStart !== null && (
-                <Text style={[styles.dDay, { color: "#FF6B6B" }]}>
+                <Text style={[styles.dDay, { color: textColor }]}>
                   D+{daysSinceStart}
                 </Text>
               )}
@@ -273,21 +343,21 @@ export default function MonthlyScreen() {
                 </Text>
               )}
 
-              {/* 그날 소모량 */}
-              {/* {hasRecord && (
+              {/* 그날 소모량 
+              {hasRecord && (
                 <Text
-                  style={[styles.kcal, { color: "#7C4DFF" }]}
+                  style={[styles.kcal, { color: "#4CAF50" }]}
                   numberOfLines={1}
                   ellipsizeMode="clip"
                 >
                   {displaySub} kcal
                 </Text>
-              )} */}
+              )}*/}
 
               {/* 몸무게 */}
               {weight > 0 && (
                 <Text
-                  style={[styles.kcal, { color: "#4CAF50" }]}
+                  style={[styles.kcal, { color: "#7C4DFF" }]}
                   numberOfLines={1}
                   ellipsizeMode="clip"
                 >
@@ -308,7 +378,7 @@ export default function MonthlyScreen() {
 
             </TouchableOpacity>
           );
-        })}
+        })} 
       </View>
 
 
@@ -321,10 +391,10 @@ export default function MonthlyScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.reportItem}>
+        {/* <View style={styles.reportItem}>
           <Text style={styles.reportLabel}>총 섭취 칼로리</Text>
           <Text style={styles.reportValue}>{totalIntakeFromStart} kcal</Text>
-        </View>
+        </View> */}
 
         <View style={styles.reportItem}>
           <Text style={styles.reportLabel}>총 소모 칼로리</Text>
@@ -339,9 +409,9 @@ export default function MonthlyScreen() {
         </View>
 
         <View style={styles.reportItem}>
-          <Text style={styles.reportLabel}>-1kg 예상일</Text>
+          <Text style={styles.reportLabel}>-1kg까지 소모해야하는 칼로리</Text>
           <Text style={styles.reportValue}>
-            {remainMidDays !== null ? `D-${remainMidDays}` : "-"}
+            {remainMidKcal !== null ? `${remainMidKcal}` : "-"}
           </Text>
         </View>
 
@@ -374,11 +444,53 @@ export default function MonthlyScreen() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {/* Milestone Modal */}
+      <Modal
+        transparent
+        visible={showMilestoneModal}
+        animationType="fade"
+        onRequestClose={() => setShowMilestoneModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowMilestoneModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.milestoneBox}>
+              <Text style={styles.milestoneIcon}>🎯</Text>
+              <Text style={styles.milestoneTitle}>-1kg 달성일</Text>
+              <Text style={styles.milestoneSubtitle}>
+                이 날짜는 현재 진행 상황을 기준으로{"\n"}
+                1kg을 감량할 것으로 예상되는 날입니다!
+              </Text>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Goal Weight Modal */}
+      <Modal
+        transparent
+        visible={showGoalModal}
+        animationType="fade"
+        onRequestClose={() => setShowGoalModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowGoalModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.milestoneBox}>
+              <Text style={styles.milestoneIcon}>🏆</Text>
+              <Text style={styles.milestoneTitle}>목표 체중 달성일</Text>
+              <Text style={styles.milestoneSubtitle}>
+                이 날짜는 현재 진행 상황을 기준으로{"\n"}
+                목표 체중({goalWeight}kg)에 도달할 것으로{"\n"}
+                예상되는 날입니다!
+              </Text>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-const pink = "#FFD6E0";
 const deepPink = "#FFB6C1";
 
 const styles = StyleSheet.create({
@@ -400,7 +512,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 2,
   },
+  dayRow: { flexDirection: "row", alignItems: "center", gap: 2 },
   day: { fontWeight: "700", fontSize: 14 },
+  successIcon: { fontSize: 10 },
   dDay: { fontSize: 8, fontWeight: "700", marginTop: 1 },
   kcal: { fontSize: 10, fontWeight: "700", marginTop: 2 },
 
@@ -460,5 +574,29 @@ const styles = StyleSheet.create({
   todayText: {
     color: "#fff",
     fontWeight: "600",
+  },
+  milestoneIcon: {
+    fontSize: 20,
+    marginTop: 2,
+  },
+  milestoneBox: {
+    backgroundColor: "#FFF",
+    padding: 24,
+    borderRadius: 16,
+    alignItems: "center",
+    maxWidth: "80%",
+  },
+  milestoneTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#FF4F84",
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  milestoneSubtitle: {
+    fontSize: 15,
+    color: "#666",
+    textAlign: "center",
+    lineHeight: 22,
   },
 });

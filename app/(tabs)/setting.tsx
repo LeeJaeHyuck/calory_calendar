@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "expo-router";
 import { default as React, useState } from "react";
 import {
+  Alert,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -15,6 +16,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { countBadges } from "../../utils/badgeUtils";
+import {
+  cancelAllNotifications,
+  cancelMealNotifications,
+  scheduleDailyNotification
+} from "../../utils/notificationUtils";
 
 export default function SettingsScreen() {
   const [weight, setWeight] = useState("");
@@ -29,9 +36,14 @@ export default function SettingsScreen() {
   const [height, setHeight] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [weeklyViewMode, setWeeklyViewMode] = useState("all"); // "all", "photos", "calories"
+  const [badgeCount, setBadgeCount] = useState(0);
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
+  const [notificationHour, setNotificationHour] = useState("21");
+  const [notificationMinute, setNotificationMinute] = useState("00");
+  const [mealNotificationEnabled, setMealNotificationEnabled] = useState(false);
 
   // ------------------------------------------------------
-  // 저장된 설정 로드
+  // 저장된 설정 로드 및 뱃지 개수 업데이트
   // ------------------------------------------------------
   useFocusEffect(
     React.useCallback(() => {
@@ -50,7 +62,15 @@ export default function SettingsScreen() {
           setAge(String(data.age || ""));
           setHeight(String(data.height || ""));
           setWeeklyViewMode(String(data.weeklyViewMode || "all"));
+          setNotificationEnabled(data.notificationEnabled || false);
+          setNotificationHour(String(data.notificationHour || "21"));
+          setNotificationMinute(String(data.notificationMinute || "00"));
+          setMealNotificationEnabled(data.mealNotificationEnabled || false);
         }
+
+        // 뱃지 개수 업데이트 (체크는 하지 않음)
+        const count = await countBadges();
+        setBadgeCount(count);
       })();
     }, [])
   );
@@ -64,6 +84,15 @@ export default function SettingsScreen() {
       (parseInt(exercise) || 0) -
       (parseInt(intake) || 0)
   );
+
+  // ------------------------------------------------------
+  // 목표 체중까지 필요한 뱃지 개수 계산
+  // ------------------------------------------------------
+  const kcalPerKg = 7700;
+  const startWeight = parseFloat(weight) || 0;
+  const goalWeight = parseFloat(targetWeight) || 0;
+  const weightDiff = startWeight - goalWeight;
+  const remainGoalDays = goalBurn > 0 ? Math.ceil((weightDiff * kcalPerKg) / goalBurn) - badgeCount : 0;
 
   // ------------------------------------------------------
   // 기초대사량 자동 계산
@@ -112,13 +141,36 @@ export default function SettingsScreen() {
       age: parseInt(age) || 0,
       height: parseFloat(height) || 0,
       weeklyViewMode,
+      notificationEnabled,
+      notificationHour: parseInt(notificationHour) || 21,
+      notificationMinute: parseInt(notificationMinute) || 0,
+      mealNotificationEnabled,
 
       // 🎯 중요한 부분
       goalBurn: goalBurn,
     };
 
     await AsyncStorage.setItem("user-settings", JSON.stringify(data));
-    alert("설정이 저장되었습니다! 💾");
+
+    // 알림 설정 적용
+    if (notificationEnabled) {
+      const hour = parseInt(notificationHour) || 21;
+      const minute = parseInt(notificationMinute) || 0;
+      await scheduleDailyNotification(hour, minute);
+      Alert.alert(
+        "설정 완료",
+        `매일 ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}에 다이어트 리포트 알림을 받습니다! 💾`
+      );
+    } else {
+      await cancelAllNotifications();
+      Alert.alert("설정 완료", "설정이 저장되었습니다! 💾");
+    }
+
+    // 식단 알림이 꺼져 있으면 기존 식단 알림 취소
+    if (!mealNotificationEnabled) {
+      await cancelMealNotifications();
+    }
+
     setIsEditing(false);
   };
 
@@ -150,6 +202,72 @@ export default function SettingsScreen() {
       </View>
     );
   };
+
+  const renderFieldCalendar = (
+  label: string,
+  value: string,
+  setter: (text: string) => void,
+  unit: string,
+  placeholder: string,
+  keyboardType: "numeric" | "default" = "numeric",
+  type: "text" | "date" = "text"
+) => {
+  const [show, setShow] = useState(false);
+
+  const formatDate = (date: Date) => {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`; // 👉 2026-02-21 형식
+  };
+
+  return (
+    <View style={styles.row}>
+      <Text style={styles.label}>{label}</Text>
+
+      {isEditing ? (
+        type === "date" ? (
+          <>
+            <Pressable
+              style={styles.input}
+              onPress={() => setShow(true)}
+            >
+              <Text style={{ textAlign: "right" }}>
+                {value || placeholder}
+              </Text>
+            </Pressable>
+
+            {show && (
+              <DateTimePicker
+                value={value ? new Date(value) : new Date()}
+                mode="date"
+                display="default"
+                onChange={(event, selectedDate) => {
+                  setShow(false);
+                  if (selectedDate) {
+                    setter(formatDate(selectedDate));
+                  }
+                }}
+              />
+            )}
+          </>
+        ) : (
+          <TextInput
+            style={styles.input}
+            keyboardType={keyboardType}
+            value={value || ""}
+            onChangeText={(text) => setter(text || "")}
+            placeholder={placeholder}
+          />
+        )
+      ) : (
+        <Text style={styles.viewText}>{value ? value : "-"}</Text>
+      )}
+
+      {!isEditing && <Text style={styles.unit}>{unit}</Text>}
+    </View>
+  );
+};
 
   const renderGenderPicker = () => {
     return (
@@ -218,7 +336,7 @@ export default function SettingsScreen() {
                   weeklyViewMode === "all" && styles.viewModeTextActive,
                 ]}
               >
-                전체
+                기본
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -237,7 +355,7 @@ export default function SettingsScreen() {
                 사진
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={[
                 styles.viewModeButton,
                 weeklyViewMode === "calories" && styles.viewModeButtonActive,
@@ -252,7 +370,7 @@ export default function SettingsScreen() {
               >
                 칼로리
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
         ) : (
           <Text style={styles.viewText}>
@@ -294,13 +412,22 @@ export default function SettingsScreen() {
             {/* 기본 정보 */}
             <View style={styles.box}>
               <Text style={styles.sectionTitle}>기본 정보</Text>
-              {renderField(
+              {/* {renderField(
                 "다이어트 시작일 :",
                 startDate,
                 setStartDate,
                 "",
                 "예: 2024-01-01",
                 "default"
+              )} */}
+              {renderFieldCalendar(
+                "다이어트 시작일 :",
+                startDate,
+                setStartDate,
+                "",
+                "날짜 선택",
+                "default",
+                "date"   // 👈 여기 추가
               )}
               {renderGenderPicker()}
               {renderField("나이 :", age, setAge, " 세", "예: 25")}
@@ -342,10 +469,155 @@ export default function SettingsScreen() {
               </View>
             </View>
 
+            {/* 뱃지 현황 */}
+            {!isEditing && startDate && (
+              <View style={styles.badgeBox}>
+                <Text style={styles.badgeTitle}>✨ 뱃지 현황</Text>
+                <View style={styles.badgeContent}>
+                  <Text style={styles.badgeCount}>{badgeCount}</Text>
+                  <Text style={styles.badgeLabel}>개 획득</Text>
+                </View>
+                {remainGoalDays > 0 && (
+                  <Text style={styles.badgeMessage}>
+                    {remainGoalDays}개의 뱃지를 더 모으면 목표 체중({goalWeight}kg)에 달성해요! 💪
+                  </Text>
+                )}
+                {badgeCount >= remainGoalDays && remainGoalDays > 0 && (
+                  <Text style={styles.badgeSuccess}>
+                    축하합니다! 목표를 달성했습니다! 🎉
+                  </Text>
+                )}
+              </View>
+            )}
+
             {/* 화면 설정 */}
             <View style={styles.box}>
               <Text style={styles.sectionTitle}>화면 설정</Text>
               {renderWeeklyViewModePicker()}
+            </View>
+
+            {/* 알림 설정 */}
+            <View style={styles.box}>
+              <Text style={styles.sectionTitle}>알림 설정</Text>
+
+              {/* 알림 활성화 토글 */}
+              <View style={styles.row}>
+                <Text style={styles.label}>리포트 알림 :</Text>
+                {isEditing ? (
+                  <View style={styles.toggleContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.toggleButton,
+                        notificationEnabled && styles.toggleButtonActive,
+                      ]}
+                      onPress={() => setNotificationEnabled(!notificationEnabled)}
+                    >
+                      <Text
+                        style={[
+                          styles.toggleText,
+                          notificationEnabled && styles.toggleTextActive,
+                        ]}
+                      >
+                        {notificationEnabled ? "켜기" : "끄기"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={styles.viewText}>
+                    {notificationEnabled ? "켜짐" : "꺼짐"}
+                  </Text>
+                )}
+              </View>
+
+              {/* 알림 시간 설정 */}
+              {notificationEnabled && (
+                <View style={styles.row}>
+                  <Text style={styles.label}>알림 시간 :</Text>
+                  {isEditing ? (
+                    <View style={styles.timeContainer}>
+                      <TextInput
+                        style={styles.timeInput}
+                        keyboardType="numeric"
+                        value={notificationHour}
+                        onChangeText={(text) => {
+                          const num = parseInt(text) || 0;
+                          if (num >= 0 && num <= 23) {
+                            setNotificationHour(text);
+                          }
+                        }}
+                        placeholder="21"
+                        maxLength={2}
+                      />
+                      <Text style={styles.timeColon}>:</Text>
+                      <TextInput
+                        style={styles.timeInput}
+                        keyboardType="numeric"
+                        value={notificationMinute}
+                        onChangeText={(text) => {
+                          const num = parseInt(text) || 0;
+                          if (num >= 0 && num <= 59) {
+                            setNotificationMinute(text);
+                          }
+                        }}
+                        placeholder="00"
+                        maxLength={2}
+                      />
+                    </View>
+                  ) : (
+                    <Text style={styles.viewText}>
+                      {String(notificationHour).padStart(2, "0")}:{String(notificationMinute).padStart(2, "0")}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* 테스트 알림 버튼 
+              {!isEditing && notificationEnabled && (
+                <TouchableOpacity
+                  style={styles.testNotificationButton}
+                  onPress={async () => {
+                    await sendTestNotification();
+                    Alert.alert("테스트 알림", "알림이 전송되었습니다!");
+                  }}
+                >
+                  <Text style={styles.testNotificationText}>📱 테스트 알림 보내기</Text>
+                </TouchableOpacity>
+              )}*/}
+
+              {/* 식단 알림 토글 */}
+              <View style={styles.row}>
+                <Text style={styles.label}>식단 알림 :</Text>
+                {isEditing ? (
+                  <View style={styles.toggleContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.toggleButton,
+                        mealNotificationEnabled && styles.toggleButtonActive,
+                      ]}
+                      onPress={() => setMealNotificationEnabled(!mealNotificationEnabled)}
+                    >
+                      <Text
+                        style={[
+                          styles.toggleText,
+                          mealNotificationEnabled && styles.toggleTextActive,
+                        ]}
+                      >
+                        {mealNotificationEnabled ? "켜기" : "끄기"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={styles.viewText}>
+                    {mealNotificationEnabled ? "켜짐" : "꺼짐"}
+                  </Text>
+                )}
+              </View>
+
+              {mealNotificationEnabled && !isEditing && (
+                <Text style={styles.mealNotificationInfo}>
+                  계획된 식단이 있다면 아침 9시, 점심 12시, 저녁 18시에 알려드려요!
+                </Text>
+              )}
             </View>
 
             {/* 목표 */}
@@ -562,5 +834,126 @@ const styles = StyleSheet.create({
   viewModeTextActive: {
     color: "#FFF",
     fontWeight: "700",
+  },
+
+  badgeBox: {
+    backgroundColor: "#FFF9E6",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    borderWidth: 2,
+    borderColor: "#FFD700",
+  },
+  badgeTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#FF7FA0",
+    marginBottom: 15,
+    textAlign: "center",
+  },
+  badgeContent: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "baseline",
+    marginBottom: 15,
+  },
+  badgeCount: {
+    fontSize: 48,
+    fontWeight: "700",
+    color: "#FFD700",
+    marginRight: 8,
+  },
+  badgeLabel: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#FF7FA0",
+  },
+  badgeMessage: {
+    fontSize: 15,
+    color: "#666",
+    textAlign: "center",
+    lineHeight: 22,
+    marginTop: 10,
+  },
+  badgeSuccess: {
+    fontSize: 16,
+    color: "#4CAF50",
+    textAlign: "center",
+    fontWeight: "700",
+    marginTop: 10,
+  },
+
+  toggleContainer: {
+    flex: 1,
+    alignItems: "flex-end",
+  },
+  toggleButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: pink,
+    borderRadius: 8,
+    backgroundColor: "#FFF",
+  },
+  toggleButtonActive: {
+    backgroundColor: deepPink,
+    borderColor: deepPink,
+  },
+  toggleText: {
+    fontSize: 14,
+    color: "#888",
+    fontWeight: "500",
+  },
+  toggleTextActive: {
+    color: "#FFF",
+    fontWeight: "700",
+  },
+
+  timeContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  timeInput: {
+    width: 50,
+    borderWidth: 1,
+    borderColor: pink,
+    borderRadius: 8,
+    height: 35,
+    paddingHorizontal: 8,
+    textAlign: "center",
+    backgroundColor: "#FFF",
+    fontSize: 16,
+  },
+  timeColon: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
+    marginHorizontal: 5,
+  },
+
+  testNotificationButton: {
+    backgroundColor: "#4CAF50",
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    alignItems: "center",
+  },
+  testNotificationText: {
+    color: "#FFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  mealNotificationInfo: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 8,
+    marginLeft: 10,
+    fontStyle: "italic",
   },
 });

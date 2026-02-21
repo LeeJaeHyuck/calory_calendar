@@ -1,0 +1,110 @@
+{
+    "exercises": [
+      {
+        "name": "플랭크",
+        "duration": "5분",
+        "calories": 35
+      },
+      {
+        "name": "버피",
+        "duration": "5분",
+        "calories": 50
+      },
+      {
+        "name": "점프 스쿼트",
+        "duration": "1분",
+        "calories": 12
+      },
+      {
+        "name": "마운틴 클라이머",
+        "duration": "5분",
+        "calories": 55
+      },
+      {
+        "name": "푸시업",
+        "duration": "10분",
+        "calories": 80
+      },
+      {
+        "name": "런지",
+        "duration": "10분",
+        "calories": 90
+      },
+      {
+        "name": "스쿼트",
+        "duration": "1분",
+        "calories": 6
+      },
+      {
+        "name": "줄넘기",
+        "duration": "10분",
+        "calories": 130
+      },
+      {
+        "name": "달리기",
+        "duration": "30분",
+        "calories": 450
+      },
+      {
+        "name": "걷기",
+        "duration": "1시간",
+        "calories": 200
+      },
+      {
+        "name": "자전거",
+        "duration": "1시간",
+        "calories": 720
+      },
+      {
+        "name": "수영",
+        "duration": "10분",
+        "calories": 110
+      },
+      {
+        "name": "복싱",
+        "duration": "10분",
+        "calories": 140
+      },
+      {
+        "name": "사이클링 (고강도)",
+        "duration": "30분",
+        "calories": 450
+      },
+      {
+        "name": "요가",
+        "duration": "1시간",
+        "calories": 240
+      },
+      {
+        "name": "필라테스",
+        "duration": "1시간",
+        "calories": 300
+      },
+      {
+        "name": "타바타 운동",
+        "duration": "15분",
+        "calories": 195
+      },
+      {
+        "name": "칼로리 번 운동",
+        "duration": "10분",
+        "calories": 100
+      },
+      {
+        "name": "스텝 에어로빅",
+        "duration": "30분",
+        "calories": 270
+      },
+      {
+        "name": "데드리프트",
+        "duration": "10분",
+        "calories": 80
+      },
+      {
+        "name": "벤치 프레스",
+        "duration": "5분",
+        "calories": 35
+      }
+    ]
+  }
+  
