@@ -161,7 +161,8 @@ export default function DailyScreen() {
   const [diary, setDiary] = useState<string>("");
 
   // setTimeout cleanup을 위한 ref
-  const autocompleteTimeoutRef = useRef<NodeJS.Timeout>();
+  // const autocompleteTimeoutRef = useRef<NodeJS.Timeout>();
+  const autocompleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // cleanup 함수
   useEffect(() => {
