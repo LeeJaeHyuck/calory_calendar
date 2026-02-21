@@ -171,7 +171,7 @@ export default function MonthlyScreen() {
   const dailyGoalSub = settings?.goalBurn ?? 0;
 
   const lostKg = (subKcal * -1) / kcalPerKg;
-  const estWeight = (startWeight - lostKg).toFixed(1);
+  const estWeight:any = (startWeight - lostKg).toFixed(1);
 
   const remainMidDays =
     subKcal > -7700
